@@ -8,7 +8,7 @@
     "quickapp" : {},
     "mp-weixin" : {
         "darkmode" : true,
-        "appid" : "",
+        "appid" : "wx492578b4c8018e67",
         "setting" : {
             "urlCheck" : false,
             "es6" : true
