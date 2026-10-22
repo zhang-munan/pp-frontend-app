@@ -1,0 +1,130 @@
+<template>
+	<MPage title="病害急救" back>
+		<view v-if="loading" class="m-note">正在加载…</view>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<template v-else-if="current"
+			><scroll-view scroll-x class="tabs"
+				><view class="tab-row"
+					><button
+						v-for="(d, i) in list"
+						:key="d.id"
+						class="m-choice"
+						:class="{ selected: active === i }"
+						@tap="active = i"
+					>
+						{{ d.name }}
+					</button></view
+				></scroll-view
+			><view class="m-card intro"
+				><view class="m-grow"
+					><view class="m-heading">{{ current.name }}</view
+					><view class="intro-copy">{{ current.symptom }}</view
+					><view v-if="current.causes" class="m-sub">常见原因：{{ current.causes }}</view
+					><view class="m-sub hint">先别着急，按下面的步骤一步步排查。</view></view
+				><image
+					v-if="current.image"
+					class="intro-photo"
+					:src="current.image"
+					mode="aspectFill"
+			/></view>
+			<view v-for="(s, i) in current.steps" :key="i" class="m-card m-row step"
+				><view class="step-no">{{ i + 1 }}</view
+				><view class="m-grow"
+					><view class="m-name">{{ s.title }}</view
+					><view class="step-copy">{{ s.content }}</view></view
+				></view
+			><view class="m-note">以上为常见情况的处理建议，情况严重时请咨询专业园艺人士</view></template
+		>
+		<view v-else class="m-card m-empty">急救知识整理中，可以先问问智慧助手</view>
+		<button class="m-button full" @tap="open('ask', 'mode=diagnose')">
+			<MIcon name="camera" color="white" :size="20" />拍照问问助手
+		</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { plantDiseases, type PlantDisease } from "@/api/plant";
+import { open } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const list = ref<PlantDisease[]>([]),
+	active = ref(0),
+	loading = ref(false),
+	error = ref("");
+const current = computed(() => list.value[active.value]);
+async function load() {
+	loading.value = true;
+	error.value = "";
+	try {
+		list.value = (await plantDiseases()) || [];
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+onLoad(async (opts) => {
+	await load();
+	const name = opts?.name ? decodeURIComponent(opts.name) : "";
+	const i = name ? list.value.findIndex((d) => d.name === name) : -1;
+	if (i >= 0) active.value = i;
+});
+</script>
+<style scoped>
+.tabs {
+	white-space: nowrap;
+	margin-bottom: 12px;
+}
+.tab-row {
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+}
+.tab-row .m-choice {
+	flex-shrink: 0;
+}
+.intro {
+	display: flex;
+	flex-direction: row;
+	gap: 12px;
+}
+.intro-copy {
+	font-size: 14px;
+	line-height: 1.8;
+	margin: 8px 0;
+}
+.intro-photo {
+	width: 120px;
+	height: 150px;
+	border-radius: 12px;
+	flex-shrink: 0;
+}
+.hint {
+	margin-top: 8px;
+	color: #329e6b;
+}
+.step {
+	gap: 12px;
+	align-items: flex-start;
+}
+.step-no {
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	background: #48aa7b;
+	color: #fff;
+	font-weight: 600;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.step-copy {
+	font-size: 13px;
+	line-height: 1.7;
+	color: #55605a;
+	margin-top: 4px;
+}
+</style>

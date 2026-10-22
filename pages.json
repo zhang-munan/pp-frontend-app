@@ -43,13 +43,6 @@
           }
         },
         {
-          "path": "settings",
-          "style": {
-            "navigationStyle": "custom",
-            "navigationBarTextStyle": "black"
-          }
-        },
-        {
           "path": "profile",
           "style": {
             "navigationStyle": "custom",
@@ -57,10 +50,9 @@
           }
         },
         {
-          "path": "blacklist",
+          "path": "privacy",
           "style": {
-            "navigationStyle": "custom",
-            "navigationBarTextStyle": "black"
+            "navigationStyle": "custom"
           }
         },
         {
@@ -131,6 +123,49 @@
           }
         },
         {
+          "path": "ai-result",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "ai-history",
+          "style": {
+            "navigationStyle": "custom",
+            "onReachBottomDistance": 80
+          }
+        },
+        {
+          "path": "plant-disease",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-calendar",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-growth",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-care-form",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-compare",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
           "path": "account-settings",
           "style": {
             "navigationStyle": "custom"
@@ -149,7 +184,79 @@
           }
         },
         {
-          "path": "feature-info",
+          "path": "member-pay",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "orders",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "reminder",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "medication",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "pet-timeline",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "vaccine-book",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "family",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "family-invite",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "family-join",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "family-view",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "annual-report",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "badges",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "data-export",
           "style": {
             "navigationStyle": "custom"
           }

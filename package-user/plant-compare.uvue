@@ -1,0 +1,338 @@
+<template>
+	<MPage title="生长对比" back>
+		<view v-if="loading && !growth" class="m-note">正在加载…</view>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<template v-else-if="growth"
+			><view class="m-card m-row head"
+				><image class="head-photo m-photo" :src="photo(growth.plant)" mode="aspectFill" /><view class="m-grow"
+					><view class="m-name">{{ growth.plant.name }}</view
+					><view class="m-sub">{{ growth.plant.speciesName || "绿植" }}</view
+					><view class="m-sub">{{ growth.summary }}</view></view
+				></view
+			>
+			<view v-if="growth.photos.length < 2" class="m-card m-empty"
+				>至少需要两张成长照片才能对比
+				<button class="m-button full" @tap="open('plant-care-form', 'plantId=' + plantId + '&type=3')">
+					去拍照记录
+				</button></view
+			>
+			<view v-else class="m-card"
+				><view class="m-heading">{{ span }} 天的变化</view
+				><view class="m-sub">同一盆植物，记录它的成长轨迹</view
+				><view class="pair"
+					><button
+						v-for="(slot, i) in [before, after]"
+						:key="i"
+						class="m-plain side"
+						:class="{ active: picking === i }"
+						@tap="picking = picking === i ? -1 : i"
+					>
+						<image class="side-photo" :src="slot?.photo" mode="aspectFill" /><view class="m-row date"
+							><MIcon name="calendar" :size="14" /><text class="m-grow">{{ slot?.occurDate }}</text
+							><MIcon name="chevron" color="muted" :size="12" /></view
+					></button>
+				</view>
+				<scroll-view v-if="picking >= 0" scroll-x class="strip"
+					><view class="strip-row"
+						><image
+							v-for="p in growth.photos"
+							:key="p.id"
+							class="thumb"
+							:class="{ chosen: (picking === 0 ? before : after)?.id === p.id }"
+							:src="p.photo"
+							mode="aspectFill"
+							@tap="choose(p)" /></view
+				></scroll-view>
+				<view class="heights"
+					><view class="m-row hrow"
+						><view class="hcol"
+							><text class="m-sub">植株高度</text
+							><text class="hnum">{{ before?.height ? before.height + " cm" : "—" }}</text></view
+						><text class="arrow">→</text
+						><view class="hcol"
+							><text class="m-sub">植株高度</text
+							><text class="hnum">{{ after?.height ? after.height + " cm" : "—" }}</text></view
+						></view
+					><view v-if="diff !== null" class="gain">{{ diff >= 0 ? `长高了 ${diff} cm` : `矮了 ${-diff} cm` }}</view
+					><view v-else class="m-sub">记录时填上高度，就能看到长高了多少</view></view
+				></view
+			>
+			<view v-if="message" class="m-error-text">{{ message }}</view>
+			<view v-if="growth.photos.length >= 2" class="m-row actions"
+				><button class="m-button outline m-grow" @tap="picking = picking === -1 ? 0 : -1">选择照片</button
+				><button class="m-button m-grow" :disabled="saving" @tap="save">
+					{{ saving ? "正在生成…" : "生成对比图" }}
+				</button></view
+			></template
+		>
+		<canvas id="compare" type="2d" class="offscreen" :style="{ width: W + 'px', height: H + 'px' }" />
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { plantGrowth, type PlantGrowth, type PlantCare } from "@/api/plant";
+import { photo, open, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const W = 345,
+	H = 470;
+const plantId = ref(0),
+	growth = ref<PlantGrowth | null>(null),
+	before = ref<PlantCare | null>(null),
+	after = ref<PlantCare | null>(null),
+	picking = ref(-1),
+	loading = ref(false),
+	error = ref(""),
+	message = ref(""),
+	saving = ref(false);
+const span = computed(() => {
+	if (!before.value || !after.value) return 0;
+	const ms = Date.parse(after.value.occurDate + "T12:00:00") - Date.parse(before.value.occurDate + "T12:00:00");
+	return Math.abs(Math.round(ms / 86400000));
+});
+const diff = computed(() => {
+	const a = Number(before.value?.height),
+		b = Number(after.value?.height);
+	return a > 0 && b > 0 ? Math.round((b - a) * 10) / 10 : null;
+});
+function choose(p: PlantCare) {
+	if (picking.value === 0) before.value = p;
+	else after.value = p;
+	if (before.value && after.value && before.value.occurDate > after.value.occurDate) {
+		[before.value, after.value] = [after.value, before.value];
+	}
+	picking.value = -1;
+}
+async function load() {
+	if (!requireLogin()) return;
+	loading.value = true;
+	error.value = "";
+	try {
+		const g = await plantGrowth(plantId.value);
+		growth.value = g;
+		after.value = g.photos[0] || null;
+		before.value = g.photos[g.photos.length - 1] || null;
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+function toPromise<T>(fn: (opts: any) => void, opts: any): Promise<T> {
+	return new Promise((resolve, reject) => fn({ ...opts, success: resolve, fail: reject }));
+}
+function queryCanvas(): Promise<any> {
+	return new Promise((resolve, reject) => {
+		uni.createSelectorQuery()
+			.select("#compare")
+			.fields({ node: true, size: true }, () => {})
+			.exec((res: any) => (res?.[0]?.node ? resolve(res[0].node) : reject(new Error("画布未就绪"))));
+	});
+}
+async function loadImage(canvas: any, src?: string): Promise<any> {
+	if (!src) return null;
+	try {
+		const info = await toPromise<{ path: string }>(uni.getImageInfo, { src });
+		return await new Promise((resolve) => {
+			const img = canvas.createImage();
+			img.onload = () => resolve(img);
+			img.onerror = () => resolve(null);
+			img.src = info.path;
+		});
+	} catch (e) {
+		return null;
+	}
+}
+function cover(ctx: any, img: any, x: number, y: number, w: number, h: number) {
+	ctx.save();
+	ctx.beginPath();
+	ctx.rect(x, y, w, h);
+	ctx.clip();
+	if (img) {
+		const scale = Math.max(w / img.width, h / img.height),
+			sw = w / scale,
+			sh = h / scale;
+		ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+	} else {
+		ctx.fillStyle = "#eef0ea";
+		ctx.fillRect(x, y, w, h);
+	}
+	ctx.restore();
+}
+async function draw() {
+	const g = growth.value!,
+		a = before.value!,
+		b = after.value!;
+	const canvas = await queryCanvas();
+	const dpr = uni.getSystemInfoSync().pixelRatio || 2;
+	canvas.width = W * dpr;
+	canvas.height = H * dpr;
+	const ctx = canvas.getContext("2d");
+	ctx.scale(dpr, dpr);
+	ctx.fillStyle = "#fbf8f3";
+	ctx.fillRect(0, 0, W, H);
+	ctx.fillStyle = "#33453a";
+	ctx.font = "bold 18px sans-serif";
+	ctx.fillText(`${g.plant.name}的成长对比`, 16, 36);
+	ctx.fillStyle = "#88918a";
+	ctx.font = "12px sans-serif";
+	ctx.fillText(`${g.plant.speciesName || "绿植"} · ${span.value} 天的变化`, 16, 58);
+	const [imgA, imgB] = await Promise.all([loadImage(canvas, a.photo), loadImage(canvas, b.photo)]);
+	cover(ctx, imgA, 16, 76, 150, 200);
+	cover(ctx, imgB, 179, 76, 150, 200);
+	ctx.fillStyle = "#48aa7b";
+	ctx.font = "bold 14px sans-serif";
+	ctx.fillText("→", 167, 182);
+	ctx.fillStyle = "#33453a";
+	ctx.font = "13px sans-serif";
+	ctx.textAlign = "center";
+	ctx.fillText(a.occurDate, 91, 298);
+	ctx.fillText(b.occurDate, 254, 298);
+	if (diff.value !== null) {
+		ctx.fillStyle = "#eef7f0";
+		ctx.fillRect(16, 316, W - 32, 76);
+		ctx.fillStyle = "#33453a";
+		ctx.font = "bold 22px sans-serif";
+		ctx.fillText(`${a.height} cm  →  ${b.height} cm`, W / 2, 350);
+		ctx.fillStyle = "#329e6b";
+		ctx.font = "13px sans-serif";
+		ctx.fillText(diff.value >= 0 ? `长高了 ${diff.value} cm` : `矮了 ${-diff.value} cm`, W / 2, 376);
+	}
+	ctx.fillStyle = "#55605a";
+	ctx.font = "13px sans-serif";
+	ctx.fillText(g.summary, W / 2, 422);
+	ctx.fillStyle = "#88918a";
+	ctx.font = "11px sans-serif";
+	ctx.fillText("毛与叶 · 记录每一次生长", W / 2, H - 18);
+	ctx.textAlign = "left";
+	return canvas;
+}
+async function save() {
+	if (saving.value || !before.value || !after.value) return;
+	saving.value = true;
+	message.value = "";
+	try {
+		const canvas = await draw();
+		const r = await toPromise<{ tempFilePath: string }>(uni.canvasToTempFilePath, { canvas, fileType: "png" });
+		await toPromise(uni.saveImageToPhotosAlbum, { filePath: r.tempFilePath });
+		uni.showToast({ title: "已保存到相册" });
+	} catch (e: any) {
+		if (/auth|deny|authorize/i.test(e?.errMsg || "")) {
+			uni.showModal({
+				title: "需要相册权限",
+				content: "请在设置中允许保存到相册",
+				confirmText: "去设置",
+				success: (res) => res.confirm && uni.openSetting({})
+			});
+		} else if (!/cancel/i.test(e?.errMsg || "")) message.value = "生成失败，请重试";
+	} finally {
+		saving.value = false;
+	}
+}
+onLoad((opts) => {
+	plantId.value = Number(opts?.plantId || 0);
+	load();
+});
+</script>
+<style scoped>
+.head {
+	gap: 12px;
+}
+.head-photo {
+	width: 72px;
+	height: 72px;
+	flex-shrink: 0;
+}
+.pair {
+	display: flex;
+	flex-direction: row;
+	gap: 10px;
+	margin-top: 12px;
+}
+.side {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 0;
+	border-radius: 12px;
+	border: 2px solid transparent;
+}
+.side.active {
+	border-color: #48aa7b;
+}
+.side-photo {
+	width: 100%;
+	height: 200px;
+	border-radius: 10px;
+}
+.date {
+	gap: 4px;
+	font-size: 13px;
+	padding: 6px 8px;
+	background: #f6f5f1;
+	border-radius: 8px;
+}
+.strip {
+	white-space: nowrap;
+	margin-top: 10px;
+}
+.strip-row {
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+}
+.thumb {
+	width: 64px;
+	height: 64px;
+	border-radius: 8px;
+	flex-shrink: 0;
+	border: 2px solid transparent;
+}
+.thumb.chosen {
+	border-color: #48aa7b;
+}
+.heights {
+	background: #eef7f0;
+	border-radius: 12px;
+	padding: 14px;
+	margin-top: 12px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+}
+.hrow {
+	width: 100%;
+	justify-content: space-around;
+}
+.hcol {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+.hnum {
+	font-size: 24px;
+	font-weight: 650;
+}
+.arrow {
+	font-size: 22px;
+	color: #48aa7b;
+}
+.gain {
+	font-size: 13px;
+	color: #329e6b;
+	background: #fff;
+	padding: 4px 14px;
+	border-radius: 14px;
+}
+.actions {
+	gap: 12px;
+}
+.offscreen {
+	position: fixed;
+	left: -9999px;
+	top: 0;
+}
+</style>

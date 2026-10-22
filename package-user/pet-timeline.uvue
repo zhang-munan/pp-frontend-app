@@ -1,0 +1,304 @@
+<template>
+	<MPage :title="(pet?.name || petName) + '的时光'" back>
+		<view v-if="readonly" class="m-note readonly-note">家人共享 · 只读查看，修改请联系主人</view>
+		<view v-if="memory" class="memory" @tap="openMemory"
+			><image
+				class="memory-cover"
+				:src="memory.cover || photo(pet, 'pet-hero')"
+				mode="aspectFill" /><view class="memory-shade" /><view class="memory-copy"
+				><view class="memory-title">一年前的今天</view
+				><view class="m-sub">{{ memory.date }}</view
+				><view class="memory-desc">{{ memory.title }} · {{ memory.desc }}</view
+				><view class="m-sub memory-note">🐾 时光会变，爱一直都在</view></view
+			></view
+		>
+		<view class="tabs"
+			><button
+				v-for="t in tabs"
+				:key="t.kind"
+				class="m-plain tab"
+				:class="{ selected: kind === t.kind }"
+				@tap="switchKind(t.kind)"
+			>
+				{{ t.name }}
+			</button></view
+		>
+		<view v-if="error" class="m-error" @tap="reload">{{ error }} · 点击重试</view>
+		<view v-if="!list.length && !loading" class="m-card m-empty"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-sub"
+				>还没有{{ kind === "photo" ? "照片" : "记录" }}，从今天开始记下陪伴</view
+			></view
+		>
+		<view class="timeline"
+			><view v-for="item in list" :key="item.id" class="node"
+				><view class="node-date"
+					><text>{{ monthDay(item.date) }}</text></view
+				><view class="node-dot" :class="{ highlight: item.highlight }" /><button
+					class="m-plain node-card"
+					:class="{ highlight: item.highlight }"
+					@tap="openItem(item)"
+				>
+					<view class="m-row node-head"
+						><view class="node-icon"
+							><MIcon :name="ICONS[item.type] || 'paw'" :color="item.highlight ? 'green' : 'amber'" :size="22"
+						/></view>
+						<view class="m-grow"
+							><view class="m-name">{{ item.title }}</view
+							><view v-if="item.type === 2" class="node-value">{{ item.value }} kg</view
+							><view v-else class="m-sub">{{ item.desc }}</view></view
+						><MIcon name="chevron" color="muted" :size="15" /></view
+					><image
+						v-if="item.photos.length"
+						class="node-photo"
+						:src="item.photos[0]"
+						mode="aspectFill"
+					/><view class="m-sub node-time">{{ item.time }}</view>
+				</button></view
+			></view
+		>
+		<view v-if="loading" class="m-note">正在加载…</view
+		><button v-else-if="hasMore" class="m-plain m-link more" @tap="loadMore">加载更多</button>
+		<button v-if="!readonly" class="m-button full" @tap="record">＋ 记录今天</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { timeline, memories, type TimelineItem, type Memory } from "@/api/care";
+import { useMaoyu, asset, photo, open, demoRecords } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const ICONS: Record<number, string> = {
+	0: "vaccine",
+	1: "paw",
+	2: "chart",
+	3: "pill",
+	4: "medical",
+	5: "calendar"
+};
+const tabs = [
+	{ kind: "all", name: "全部" },
+	{ kind: "health", name: "健康" },
+	{ kind: "daily", name: "日常" },
+	{ kind: "photo", name: "照片" }
+];
+const { visiblePets, refresh, guest } = useMaoyu(),
+	petId = ref(0),
+	kind = ref("all"),
+	list = ref<TimelineItem[]>([]),
+	page = ref(1),
+	total = ref(0),
+	loading = ref(false),
+	error = ref(""),
+	memory = ref<Memory | null>(null),
+	readonly = ref(false),
+	petName = ref("");
+const pet = computed(() => visiblePets.value.find((p) => p.id === petId.value)),
+	hasMore = computed(() => list.value.length < total.value);
+function monthDay(d: string) {
+	return `${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日`;
+}
+function demo(): TimelineItem[] {
+	return demoRecords(petId.value).map((r) => ({
+		id: r.id,
+		petId: r.petId,
+		type: r.type,
+		title: r.type === 2 ? "记录体重" : r.itemName,
+		desc: r.remark || "已记录",
+		date: r.occurDate,
+		time: "",
+		value: r.value ?? null,
+		cost: null,
+		photos: [],
+		highlight: [0, 1, 4].includes(r.type)
+	}));
+}
+async function fetchList(reset: boolean) {
+	if (loading.value) return;
+	if (guest.value || petId.value <= 0) {
+		const all = demo().sort((a, b) => b.date.localeCompare(a.date));
+		list.value = all.filter((i) =>
+			kind.value === "health" ? i.type !== 5 : kind.value === "daily" ? i.type === 5 : kind.value !== "photo"
+		);
+		total.value = list.value.length;
+		return;
+	}
+	loading.value = true;
+	error.value = "";
+	try {
+		const next = reset ? 1 : page.value + 1;
+		const r = await timeline(petId.value, kind.value, next);
+		list.value = reset ? r.list : [...list.value, ...r.list];
+		total.value = r.pagination.total;
+		page.value = next;
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+function reload() {
+	fetchList(true);
+}
+function loadMore() {
+	if (hasMore.value) fetchList(false);
+}
+function switchKind(k: string) {
+	kind.value = k;
+	list.value = [];
+	total.value = 0;
+	fetchList(true);
+}
+function openItem(item: TimelineItem) {
+	if (item.id <= 0) return;
+	if (readonly.value) {
+		if (item.photos.length) uni.previewImage({ urls: item.photos });
+		return;
+	}
+	if (item.type === 3) open("medication", `petId=${item.petId}`);
+	else open("health-form", `petId=${item.petId}&type=${item.type}&id=${item.id}`);
+}
+function openMemory() {
+	const item = memory.value?.items[0];
+	if (item) openItem(item);
+}
+function record() {
+	open("health-form", `petId=${petId.value}&type=5`);
+}
+onLoad((opts) => {
+	petId.value = Number(opts?.petId || 0);
+	readonly.value = opts?.readonly === "1";
+	petName.value = decodeURIComponent(opts?.name || "");
+});
+onShow(async () => {
+	await refresh();
+	await fetchList(true);
+	if (!guest.value && petId.value > 0) memory.value = await memories(petId.value).catch(() => null);
+});
+onReachBottom(loadMore);
+</script>
+<style scoped>
+.memory {
+	position: relative;
+	height: 160px;
+	border-radius: 15px;
+	overflow: hidden;
+	margin-bottom: 12px;
+}
+.memory-cover {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+}
+.memory-shade {
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(90deg, #fbf8f3f2 0%, #fbf8f3b3 45%, transparent 75%);
+}
+.memory-copy {
+	position: relative;
+	padding: 20px 16px;
+}
+.memory-title {
+	font-size: 22px;
+	font-weight: 700;
+}
+.memory-desc {
+	font-size: 13px;
+	margin-top: 8px;
+	color: #33453a;
+	max-width: 60%;
+}
+.memory-note {
+	margin-top: 10px;
+}
+.tabs {
+	display: flex;
+	flex-direction: row;
+	background: #f1f3ef;
+	border-radius: 22px;
+	padding: 4px;
+	margin-bottom: 14px;
+}
+.tab {
+	flex: 1;
+	height: 34px;
+	border-radius: 18px;
+	font-size: 14px;
+	color: #5c665f;
+}
+.tab.selected {
+	background: #48aa7b;
+	color: #fff;
+}
+.timeline {
+	position: relative;
+}
+.node {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+.node-date {
+	width: 58px;
+	font-size: 13px;
+	font-weight: 600;
+	padding-top: 12px;
+}
+.node-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #b9dcc6;
+	margin-top: 16px;
+}
+.node-dot.highlight {
+	background: #48aa7b;
+}
+.node-card {
+	flex: 1;
+	display: block;
+	text-align: left;
+	background: #fff;
+	border-radius: 14px;
+	padding: 12px;
+	box-shadow: 0 3px 12px #2a442609;
+}
+.node-card.highlight {
+	border-left: 3px solid #48aa7b;
+}
+.node-head {
+	gap: 10px;
+}
+.node-icon {
+	width: 40px;
+	height: 40px;
+	border-radius: 10px;
+	background: #f3f7f1;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.node-value {
+	font-size: 22px;
+	font-weight: 700;
+	color: #329e6b;
+}
+.node-photo {
+	width: 100%;
+	height: 140px;
+	border-radius: 10px;
+	margin-top: 8px;
+}
+.node-time {
+	margin-top: 4px;
+	font-size: 11px;
+}
+.more {
+	width: 100%;
+	margin: 6px 0 12px;
+}
+</style>

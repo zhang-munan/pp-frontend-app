@@ -14,7 +14,8 @@
 		<view class="calendar-row"
 			><view class="week-card m-card"
 				><view class="m-between"
-					><text class="month">{{ monthLabel }}</text
+					><button class="m-plain month" @tap="guest ? login() : open('plant-calendar')">
+						{{ monthLabel }} <MIcon name="chevron" color="muted" :size="12" /></button
 					><view class="m-row"
 						><button class="m-plain" aria-label="上一周" @tap="weekOffset--">
 							<MIcon name="back" color="muted" :size="14" /></button

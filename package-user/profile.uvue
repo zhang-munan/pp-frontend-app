@@ -1,5 +1,146 @@
 <template>
-	<view></view>
+	<MPage title="个人资料" back>
+		<view class="m-card avatar-card"
+			><!-- #ifdef MP-WEIXIN --><button class="m-plain avatar-button" open-type="chooseAvatar" @chooseavatar="onChooseAvatar">
+				<image class="m-avatar avatar" :src="avatar || asset('profile-avatar.jpg')" mode="aspectFill" /><view class="avatar-edit"
+					><MIcon name="camera" color="white" :size="14"
+				/></view></button
+			><!-- #endif --><!-- #ifndef MP-WEIXIN --><button class="m-plain avatar-button" @tap="pickAvatar">
+				<image class="m-avatar avatar" :src="avatar || asset('profile-avatar.jpg')" mode="aspectFill" /><view class="avatar-edit"
+					><MIcon name="camera" color="white" :size="14"
+				/></view></button
+			><!-- #endif --><view class="m-sub">点击更换头像</view></view
+		>
+		<view class="m-card"
+			><view class="m-field"
+				><text class="m-label">昵称</text
+				><input
+					class="m-input"
+					type="nickname"
+					:value="nickName"
+					maxlength="30"
+					placeholder="给自己取个名字"
+					@input="nickName = $event.detail.value"
+					@blur="nickName = $event.detail.value"
+			/></view
+			><view class="m-field"
+				><text class="m-label">个人简介</text
+				><textarea
+					class="m-textarea"
+					:value="description"
+					maxlength="100"
+					placeholder="和毛孩子、绿植一起的日常…"
+					@input="description = $event.detail.value"
+				/><view class="m-sub count">{{ description.length }}/100</view></view
+			><view class="m-field"
+				><text class="m-label">手机号</text
+				><button class="m-plain m-input m-between phone" @tap="open('change-phone')">
+					<text>{{ phoneText }}</text><MIcon name="chevron" color="muted" :size="16" /></button></view
+		></view>
+		<button class="m-button full" :disabled="saving" @tap="save">{{ saving ? "保存中…" : "保存" }}</button>
+	</MPage>
 </template>
-<script setup>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { updatePerson, uploadUserAvatar } from "@/api/user";
+import { useMaoyu, asset, open, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const { user } = useMaoyu();
+const avatar = ref(""),
+	localAvatar = ref(""),
+	nickName = ref(""),
+	description = ref(""),
+	saving = ref(false);
+const phoneText = computed(() => {
+	const p = String(user.info.value?.phone || "");
+	return p ? p.replace(/^(\d{3})\d{4}(\d{4})$/, "$1****$2") : "未绑定，去绑定";
+});
+function fill() {
+	const info: any = user.info.value || {};
+	avatar.value = info.avatarUrl || "";
+	nickName.value = info.nickName || "";
+	description.value = info.description || "";
+	localAvatar.value = "";
+}
+function onChooseAvatar(e: any) {
+	const url = e?.detail?.avatarUrl;
+	if (!url) return;
+	avatar.value = url;
+	localAvatar.value = url;
+}
+function pickAvatar() {
+	uni.chooseImage({
+		count: 1,
+		sizeType: ["compressed"],
+		success: (r) => onChooseAvatar({ detail: { avatarUrl: r.tempFilePaths[0] } })
+	});
+}
+async function save() {
+	if (saving.value) return;
+	const name = nickName.value.trim();
+	if (!name) return uni.showToast({ title: "请填写昵称", icon: "none" });
+	saving.value = true;
+	try {
+		const data: any = { nickName: name, description: description.value.trim() };
+		if (localAvatar.value) data.avatarUrl = await uploadUserAvatar(localAvatar.value);
+		await updatePerson(data);
+		await user.get();
+		fill();
+		uni.showToast({ title: "已保存" });
+		setTimeout(() => uni.navigateBack(), 600);
+	} catch (e) {
+		uni.showToast({ title: errorMessage(e, "保存失败，请重试"), icon: "none" });
+	} finally {
+		saving.value = false;
+	}
+}
+let loaded = false;
+onShow(async () => {
+	if (!requireLogin()) return;
+	await user.get();
+	if (!loaded) fill();
+	loaded = true;
+});
 </script>
+<style scoped>
+.avatar-card {
+	align-items: center;
+	padding: 22px 16px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.avatar-button {
+	position: relative;
+	width: 84px;
+	height: 84px;
+	padding: 0;
+}
+.avatar {
+	width: 84px;
+	height: 84px;
+}
+.avatar-edit {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	width: 26px;
+	height: 26px;
+	border-radius: 50%;
+	background: #48aa7b;
+	border: 2px solid #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.count {
+	text-align: right;
+	margin-top: 4px;
+}
+.phone {
+	width: 100%;
+	text-align: left;
+}
+</style>

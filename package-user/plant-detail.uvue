@@ -10,6 +10,7 @@
 						mode="aspectFill"
 					/><view class="m-grow"
 						><view class="detail-name">{{ plant.name }}</view
+						><view v-if="plant.status" class="status-badge">{{ PLANT_STATUS_NAMES[plant.status] }}</view
 						><view class="m-sub">{{ plant.speciesName || "绿植" }}</view
 						><view class="m-sub m-section">{{ LOCATION_NAMES[plant.location] }}</view
 						><view class="m-sub">{{
@@ -28,8 +29,13 @@
 				><view class="care-icon"><MIcon name="water" :size="28" /></view
 				><view class="m-grow"
 					><view class="m-name">{{ waterText(plant) }}</view
-					><view class="m-sub">先看看土壤，再决定是否浇水</view></view
+					><view class="m-sub">{{
+						plant.fertilizeCycleDays > 0 && plant.nextFertilizeDate && !plant.status
+							? "下次施肥 " + plant.nextFertilizeDate.slice(0, 10)
+							: "先看看土壤，再决定是否浇水"
+					}}</view></view
 				><button
+					v-if="!plant.status"
 					class="m-button small"
 					:disabled="pending.includes(plant.id)"
 					@tap="
@@ -41,6 +47,21 @@
 					{{ plant.lastWaterDate?.slice(0, 10) === dateKey() ? "撤销" : "浇过了" }}
 				</button></view
 			>
+			<view v-if="!plant.status" class="quick m-row"
+				><button
+					v-for="t in [1, 2, 3, 5]"
+					:key="t"
+					class="m-plain quick-item"
+					@tap="record(t)"
+				>
+					<view class="care-icon"
+						><MIcon
+							:name="t === 3 ? 'camera' : t === 5 ? 'sun' : t === 2 ? 'home' : 'leaf'"
+							:color="t === 1 || t === 5 ? 'amber' : 'green'"
+							:size="22" /></view
+					><text>{{ t === 3 ? "拍照" : CARE_TYPE_NAMES[t] }}</text>
+				</button></view
+			>
 			<view class="detail-grid"
 				><button
 					class="m-card m-plain shortcut"
@@ -50,12 +71,12 @@
 						><view class="m-name">养护攻略</view
 						><view class="m-sub">新手也能养好</view></view
 					></button
-				><button class="m-card m-plain shortcut" @tap="showAll = !showAll">
+				><button class="m-card m-plain shortcut" @tap="open('plant-growth', 'plantId=' + plant.id)">
 					<MIcon name="chart" color="amber" :size="28" /><view
 						><view class="m-name">生长记录</view
-						><view class="m-sub">查看养护时间线</view></view
+						><view class="m-sub">照片与高度对比</view></view
 					></button
-				><button class="m-card m-plain shortcut" @tap="backToPlants">
+				><button class="m-card m-plain shortcut" @tap="openCalendar">
 					<MIcon name="calendar" :size="28" /><view
 						><view class="m-name">养护日历</view
 						><view class="m-sub">不错过每一次照顾</view></view
@@ -81,16 +102,24 @@
 					class="timeline m-row"
 					v-for="r in showAll ? timeline : timeline.slice(0, 3)"
 					:key="r.id"
-					><view class="care-icon"><MIcon :name="r.type === 0 ? 'water' : 'leaf'" /></view
+					@longpress="removeRecord(r)"
+					><view class="care-icon"
+						><MIcon
+							:name="r.type === 0 ? 'water' : r.type === 3 ? 'camera' : r.type === 5 ? 'sun' : 'leaf'"
+					/></view
 					><view class="m-grow"
 						><view class="m-between"
-							><text>{{ CARE_TYPE_NAMES[r.type] }}</text
+							><text
+								>{{ CARE_TYPE_NAMES[r.type] }}{{ r.milestone && r.milestone !== CARE_TYPE_NAMES[r.type] ? " · " + r.milestone : ""
+								}}{{ r.height ? " · " + r.height + "cm" : "" }}</text
 							><text class="m-sub">{{ r.occurDate }}</text></view
 						><view class="m-sub">{{ r.remark || "记下一次用心的照顾" }}</view></view
-					></view
-				><view v-if="!timeline.length" class="m-note">还没有养护记录</view></view
+					><image v-if="r.photo" class="record-photo" :src="r.photo" mode="aspectFill"
+				/></view
+				><view v-if="!timeline.length" class="m-note">还没有养护记录</view
+				><view v-else-if="showAll" class="m-note">长按记录可删除</view></view
 			>
-			<button class="m-banner m-plain" @tap="open('ask')">
+			<button class="m-banner m-plain" @tap="open('ask', 'mode=diagnose&plantId=' + plant.id)">
 				<MIcon name="chat" :size="30" /><view class="m-grow">智慧助手</view
 				><text>去提问 ›</text>
 			</button></template
@@ -108,8 +137,10 @@ import MIcon from "@/components/MIcon.uvue";
 import {
 	careTimeline,
 	undoWater,
+	removeCare,
 	LOCATION_NAMES,
 	CARE_TYPE_NAMES,
+	PLANT_STATUS_NAMES,
 	type PlantCare
 } from "@/api/plant";
 import {
@@ -128,8 +159,31 @@ const { visiblePlants, refresh, waterPlants, pending, undo, undoMessage } = useM
 	error = ref(""),
 	showAll = ref(false);
 const plant = computed(() => visiblePlants.value.find((p) => p.id === id.value));
-function backToPlants() {
-	uni.switchTab({ url: "/pages/plant" });
+function record(type: number) {
+	if (!requireLogin()) return;
+	open("plant-care-form", `plantId=${id.value}&type=${type}`);
+}
+function openCalendar() {
+	if (!requireLogin()) return;
+	open("plant-calendar", "plantId=" + id.value);
+}
+function removeRecord(r: PlantCare) {
+	if (id.value < 0) return;
+	uni.showModal({
+		title: `删除这条${CARE_TYPE_NAMES[r.type]}记录？`,
+		content: r.type <= 1 ? "删除后会按剩余记录重新计算提醒" : "删除后无法恢复",
+		confirmColor: "#d9534f",
+		success: async (res) => {
+			if (!res.confirm) return;
+			try {
+				await removeCare(r.id);
+				await refresh();
+				await loadTimeline();
+			} catch (e) {
+				/* The request layer reports the error. */
+			}
+		}
+	});
 }
 async function loadTimeline() {
 	if (id.value < 0) {
@@ -217,5 +271,32 @@ onShow(async () => {
 }
 .timeline:last-child {
 	border: 0;
+}
+.record-photo {
+	width: 48px;
+	height: 48px;
+	border-radius: 8px;
+	flex-shrink: 0;
+}
+.status-badge {
+	display: inline-block;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: #f3f1ec;
+	color: #88918a;
+	margin: 2px 0;
+}
+.quick {
+	justify-content: space-between;
+	margin-bottom: 12px;
+}
+.quick-item {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
 }
 </style>

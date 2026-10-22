@@ -107,9 +107,28 @@
 					</button></view
 				></view
 			>
+			<view v-if="editing" class="m-card"
+				><text class="m-label">陪伴状态</text
+				><view class="m-choices"
+					><button
+						v-for="(s, i) in PET_STATUS_NAMES"
+						:key="s"
+						class="m-choice"
+						:class="{ selected: status === i }"
+						@tap="changeStatus(i)"
+					>
+						{{ s }}
+					</button></view
+				><view class="m-sub m-section"
+					>已离世或已送养的伙伴会保留全部记录，不再发送提醒。</view
+				></view
+			>
 			<view v-if="message" class="m-error-text">{{ message }}</view
 			><button class="m-button full" :disabled="saving" @tap="save">
 				{{ saving ? "正在保存…" : "保存档案" }}</button
+			><button v-if="editing" class="m-button outline full delete-btn" @tap="removePet">
+				删除档案
+			</button
 			><view v-if="guest" class="m-note">保存时需要登录，已填写内容会保留</view></template
 		>
 	</MPage>
@@ -119,15 +138,23 @@ import { ref, watch } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
 import { upload } from "@/.cool";
-import { addPet, updatePet, SPECIES_NAMES } from "@/api/pet";
+import {
+	addPet,
+	updatePet,
+	setPetStatus,
+	deletePet,
+	SPECIES_NAMES,
+	PET_STATUS_NAMES
+} from "@/api/pet";
 import { useMaoyu, asset, dateKey, requireLogin } from "@/composables/maoyu";
 import { errorMessage } from "@/utils/error";
-const { guest, visiblePets, refresh } = useMaoyu(),
+const { guest, visiblePets, selectedPet, refresh } = useMaoyu(),
 	step = ref(1),
 	editing = ref(false),
 	saving = ref(false),
 	message = ref(""),
-	localPhoto = ref("");
+	localPhoto = ref(""),
+	status = ref(0);
 const symbols = ["🐱", "🐶", "🐰", "🐹", "🐦", "🐟", "🦎", "🐾"],
 	genders = [
 		{ id: 2, name: "女孩" },
@@ -191,12 +218,53 @@ async function save() {
 		saving.value = false;
 	}
 }
+function changeStatus(next: number) {
+	if (next === status.value) return;
+	const name = form.value.name || "TA";
+	const apply = async () => {
+		try {
+			await setPetStatus(petId.value, next);
+			status.value = next;
+			await refresh();
+		} catch (e) {
+			message.value = errorMessage(e);
+		}
+	};
+	if (next === 0) return apply();
+	uni.showModal({
+		title: `将${name}标记为${PET_STATUS_NAMES[next]}？`,
+		content: "之后不再发送提醒，所有记录都会一直保留，可随时改回在养。",
+		success: (r) => r.confirm && apply()
+	});
+}
+function removePet() {
+	const name = form.value.name || "TA";
+	uni.showModal({
+		title: `删除${name}的档案？`,
+		content: "全部健康记录、照片和提醒会一并删除，且无法恢复。若只是离开了，可以改为“已离世”或“已送养”。",
+		confirmText: "删除",
+		confirmColor: "#d9534f",
+		success: async (r) => {
+			if (!r.confirm) return;
+			try {
+				await deletePet(petId.value);
+				uni.removeStorageSync(key());
+				selectedPet.value = 0;
+				await refresh();
+				uni.switchTab({ url: "/pages/pet" });
+			} catch (e) {
+				message.value = errorMessage(e);
+			}
+		}
+	});
+}
 onLoad(async (opts) => {
 	petId.value = Number(opts?.petId || 0);
 	await refresh();
 	if (petId.value) {
 		const p = visiblePets.value.find((p) => p.id === petId.value);
 		if (p) {
+			status.value = p.status || 0;
 			editing.value = petId.value > 0;
 			form.value = {
 				name: p.name,
@@ -210,6 +278,14 @@ onLoad(async (opts) => {
 			};
 			step.value = 2;
 		}
+	} else if (opts?.species !== undefined || opts?.breed) {
+		form.value = {
+			...form.value,
+			species: Math.min(7, Math.max(0, Number(opts.species) || 0)),
+			breed: opts.breed ? decodeURIComponent(opts.breed) : "",
+			avatar: opts.photo ? decodeURIComponent(opts.photo) : ""
+		};
+		step.value = 2;
 	} else {
 		const draft = uni.getStorageSync(key());
 		if (draft?.name?.trim()) {
@@ -246,6 +322,11 @@ onLoad(async (opts) => {
 	position: relative;
 	width: 106px;
 	margin: 20px auto;
+}
+.delete-btn {
+	margin-top: 10px;
+	color: #d9534f;
+	border-color: #f0c9c7;
 }
 .avatar-picker > image {
 	width: 106px;

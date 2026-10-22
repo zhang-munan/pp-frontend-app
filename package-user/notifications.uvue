@@ -1,61 +1,313 @@
 <template>
 	<MPage title="消息中心" back
-		><view class="m-card m-row"
-			><MIcon name="bell" :size="26" /><view class="m-grow"
-				><view class="m-name">不错过每一次照顾</view
-				><view class="m-sub">{{
-					guest ? "登录后查看你的提醒" : "当前养护与健康提醒"
-				}}</view></view
+		><template v-if="guest"
+			><view class="m-card m-empty"
+				><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-name"
+					>登录后查看你的提醒</view
+				><button class="m-button full" @tap="login">登录 / 注册</button></view
+			></template
+		><template v-else
+			><view class="tabs"
+				><button
+					v-for="t in tabs"
+					:key="t.type"
+					class="tab m-plain"
+					:class="{ active: type === t.type }"
+					@tap="switchTab(t.type)"
+				>
+					{{ t.name }}<text v-if="t.count" class="tab-count">{{ t.count }}</text></button
+				><view class="m-grow" /><button class="read-all m-plain" @tap="readAll">
+					全部已读
+				</button></view
+			><view v-if="error" class="m-error" @tap="reload">{{ error }} · 点击重试</view
+			><view
+				v-for="m in list"
+				:key="m.id"
+				class="m-card message"
+				@tap="openMessage(m)"
+				><view class="message-image"
+					><image v-if="m.image" :src="m.image" mode="aspectFill" /><MIcon
+						v-else
+						:name="iconOf(m)"
+						:size="30" /><view v-if="!m.readFlag" class="unread-dot"
+				/></view
+				><view class="m-grow"
+					><view class="m-name">{{ m.title }}</view
+					><view class="m-sub">{{ m.content }}</view
+					><view
+						v-if="m.extra?.productCard"
+						class="product"
+						@tap.stop="openProduct(m)"
+						><image
+							v-if="m.extra.productCard.image"
+							:src="m.extra.productCard.image"
+							mode="aspectFill" /><view class="m-grow"
+							><view class="product-title">{{ m.extra.productCard.title }}</view
+							><view class="product-price"
+								>¥{{ (m.extra.productCard.price / 100).toFixed(2) }}</view
+							></view
+						></view
+					><view class="time">{{ timeText(m.createTime) }}</view></view
+				><button
+					v-if="actionOf(m)"
+					class="m-button small"
+					:class="{ soft: m.category !== 'water' }"
+					@tap.stop="act(m)"
+				>
+					{{ actionOf(m) }}
+				</button></view
+			><view v-if="!list.length && !loading && !error" class="m-empty"
+				><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-sub"
+					>暂时没有新的消息</view
+				></view
+			><button v-if="hasMore" class="m-plain m-link more" @tap="loadMore">加载更多</button
+			><view v-if="loading" class="m-note">加载中…</view
 			><button
-				class="m-plain m-green"
+				class="m-plain m-link more"
 				@tap="open('account-settings', 'section=notifications')"
 			>
-				设置
-			</button></view
-		><view v-if="error" class="m-error" @tap="refresh">{{ error }} · 重试</view
-		><button
-			class="m-card notification m-plain"
-			v-for="p in visiblePlants.filter(isDue)"
-			:key="'p' + p.id"
-			@tap="open('plant-detail', 'id=' + p.id)"
-		>
-			<MIcon name="water" color="amber" :size="30" /><view class="m-grow"
-				><view class="m-name">{{ p.name }}的浇水提醒</view
-				><view class="m-sub">{{ waterText(p) }} · 请先检查土壤干湿</view></view
-			><MIcon name="chevron" color="muted" :size="16" /></button
-		><button
-			class="m-card notification m-plain"
-			v-for="h in today.health"
-			:key="h.id"
-			@tap="open('pet-records', `petId=${h.petId}&type=${h.type}`)"
-		>
-			<MIcon name="paw" :size="30" /><view class="m-grow"
-				><view class="m-name">{{ h.petName }} · {{ h.itemName }}</view
-				><view class="m-sub">下次 {{ h.nextDate }}</view></view
-			><MIcon name="chevron" color="muted" :size="16" /></button
-		><view v-if="guest" class="m-note">以上为示例养护提醒</view
-		><view v-else-if="!today.total" class="m-empty"
-			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-sub"
-				>暂时没有新的提醒</view
-			></view
+				消息设置
+			</button></template
 		></MPage
 	>
 </template>
 <script setup lang="ts">
+import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-import { useMaoyu, asset, open, isDue, waterText } from "@/composables/maoyu";
-const { guest, visiblePlants, today, error, refresh } = useMaoyu();
-onShow(refresh);
+import {
+	messageList,
+	messageUnread,
+	readMessages,
+	readAllMessages,
+	type MessageItem,
+	type UnreadCount
+} from "@/api/message";
+import { water } from "@/api/plant";
+import { useMaoyu, asset, open, login, daysFromToday } from "@/composables/maoyu";
+import { askSubscribe } from "@/utils/subscribe";
+import { errorMessage } from "@/utils/error";
+const { guest, refresh } = useMaoyu();
+const type = ref(0),
+	list = ref<MessageItem[]>([]),
+	page = ref(1),
+	hasMore = ref(false),
+	loading = ref(false),
+	error = ref(""),
+	counts = ref<UnreadCount>({ total: 0, remind: 0, system: 0 });
+const tabs = computed(() => [
+	{ type: 0, name: "提醒", count: counts.value.remind },
+	{ type: 1, name: "系统", count: counts.value.system }
+]);
+const ICONS: Record<string, string> = {
+	water: "water",
+	fertilize: "leaf",
+	vaccine: "vaccine",
+	deworm: "paw",
+	medication: "pill",
+	order: "crown",
+	member: "crown",
+	family: "group",
+	feedback: "help"
+};
+function iconOf(m: MessageItem) {
+	return ICONS[m.category] || "paw";
+}
+function actionOf(m: MessageItem) {
+	if (m.readFlag && m.category !== "water") return "";
+	if (m.category === "water") return m.readFlag ? "" : "去打卡";
+	if (["vaccine", "deworm", "medication"].includes(m.category)) return "查看计划";
+	if (m.category === "fertilize") return "去看看";
+	return "";
+}
+function timeText(time: string) {
+	const d = daysFromToday(time);
+	if (d === 0) return `今天 ${time.slice(11, 16)}`;
+	if (d === -1) return `昨天 ${time.slice(11, 16)}`;
+	return time.slice(0, 10);
+}
+function go(page?: string) {
+	if (!page) return;
+	if (page.startsWith("/pages/")) uni.switchTab({ url: page.split("?")[0] });
+	else uni.navigateTo({ url: page });
+}
+async function markRead(m: MessageItem) {
+	if (m.readFlag) return;
+	m.readFlag = 1;
+	const key = m.type === 0 ? "remind" : "system";
+	counts.value[key] = Math.max(0, counts.value[key] - 1);
+	await readMessages([m.id]).catch(() => {});
+}
+function openMessage(m: MessageItem) {
+	markRead(m);
+	go(m.page);
+}
+function openProduct(m: MessageItem) {
+	markRead(m);
+	go(m.extra?.productCard?.page);
+}
+async function act(m: MessageItem) {
+	if (m.category === "water" && m.bizId) {
+		askSubscribe(["care"]);
+		try {
+			await water(m.bizId);
+			uni.showToast({ title: "已记录浇水", icon: "none" });
+			await markRead(m);
+			refresh();
+		} catch (e) {
+			/* 请求层已提示 */
+		}
+		return;
+	}
+	openMessage(m);
+}
+async function loadCounts() {
+	counts.value = (await messageUnread().catch(() => null)) || counts.value;
+}
+async function fetchPage(p: number) {
+	loading.value = true;
+	error.value = "";
+	try {
+		const res = await messageList(type.value, p, 20);
+		const rows = res?.list || [];
+		list.value = p === 1 ? rows : [...list.value, ...rows];
+		page.value = p;
+		hasMore.value = list.value.length < (res?.pagination?.total || 0);
+	} catch (e) {
+		error.value = errorMessage(e, "消息加载失败");
+	} finally {
+		loading.value = false;
+	}
+}
+function reload() {
+	loadCounts();
+	fetchPage(1);
+}
+function loadMore() {
+	if (!loading.value && hasMore.value) fetchPage(page.value + 1);
+}
+function switchTab(t: number) {
+	if (type.value === t) return;
+	type.value = t;
+	list.value = [];
+	fetchPage(1);
+}
+async function readAll() {
+	try {
+		await readAllMessages(type.value);
+		list.value.forEach((m) => (m.readFlag = 1));
+		await loadCounts();
+	} catch (e) {
+		/* 请求层已提示 */
+	}
+}
+onShow(async () => {
+	await refresh();
+	if (!guest.value) reload();
+});
+onReachBottom(loadMore);
 </script>
 <style scoped>
-.notification {
-	width: 100%;
-	gap: 12px;
-	text-align: left;
-	justify-content: flex-start;
+.tabs {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 22px;
+	margin-bottom: 14px;
 }
-.notification .m-name {
+.tab {
 	font-size: 16px;
+	color: #6f7772;
+	padding: 6px 0;
+	border-bottom: 2px solid transparent;
+}
+.tab.active {
+	color: #2f7d58;
+	font-weight: 600;
+	border-bottom-color: #2f7d58;
+}
+.tab-count {
+	font-size: 11px;
+	color: #fff;
+	background: #f19d21;
+	border-radius: 8px;
+	padding: 0 5px;
+	margin-left: 4px;
+}
+.read-all {
+	font-size: 13px;
+	color: #2f7d58;
+	background: #edf7f0;
+	border-radius: 14px;
+	padding: 5px 12px;
+}
+.message {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 12px;
+}
+.message-image {
+	position: relative;
+	width: 64px;
+	height: 64px;
+	border-radius: 12px;
+	background: #edf7f0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.message-image image {
+	width: 64px;
+	height: 64px;
+	border-radius: 12px;
+}
+.unread-dot {
+	position: absolute;
+	top: -3px;
+	right: -3px;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #f19d21;
+	border: 2px solid #fff;
+}
+.message .m-name {
+	font-size: 16px;
+}
+.time {
+	font-size: 11px;
+	color: #a0a6a2;
+	margin-top: 4px;
+}
+.more {
+	width: 100%;
+}
+.product {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	padding: 6px;
+	border-radius: 10px;
+	background: #f6f8f5;
+}
+.product image {
+	width: 40px;
+	height: 40px;
+	border-radius: 8px;
+	flex-shrink: 0;
+}
+.product-title {
+	font-size: 13px;
+	color: #2b302d;
+}
+.product-price {
+	font-size: 13px;
+	color: #e46b2c;
+	font-weight: 600;
+	margin-top: 2px;
 }
 </style>

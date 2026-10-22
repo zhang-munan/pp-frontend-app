@@ -36,7 +36,10 @@
 					><view>{{ ageText(currentPet.birthday) }}</view
 					><text v-if="age?.humanAge" class="human-age"
 						>相当于人类 {{ age.humanAge }} 岁</text
-					><view v-if="guest" class="pet-alert">！ 驱虫即将到期</view></view
+					><view v-if="guest" class="pet-alert">！ 驱虫即将到期</view
+					><view v-else-if="currentPet.status" class="pet-alert gone">{{
+						currentPet.status === 1 ? "已离世 · 永远怀念" : "已送养 · 愿 TA 安好"
+					}}</view></view
 				><text class="hero-note">有你在\n就是家 ♡</text></view
 			>
 			<view class="health-grid m-card"
@@ -53,6 +56,24 @@
 					/><text>{{ g.label }}</text>
 				</button></view
 			>
+			<view v-if="!guest && currentPet.status === 0" class="m-card checkin"
+				><view class="m-between"
+					><text class="m-heading">今日打卡</text
+					><button class="m-plain m-link" @tap="records(5)">
+						补记 / 加照片 <MIcon name="chevron" color="muted" :size="15" /></button></view
+				><view class="checkin-items"
+					><button
+						v-for="item in dailyItems"
+						:key="item"
+						class="m-choice"
+						:class="{ selected: checked.includes(item) }"
+						:disabled="checking === item"
+						@tap="quickCheckin(item)"
+					>
+						{{ checked.includes(item) ? "✓ " : "" }}{{ item }}
+					</button></view
+				></view
+			>
 			<view class="m-card recent"
 				><view class="m-between"
 					><text class="m-heading">最近记录</text
@@ -62,7 +83,7 @@
 					v-for="r in recent"
 					:key="r.id"
 					class="record-row m-plain"
-					@tap="records(r.type)"
+					@tap="openRecord(r)"
 				>
 					<view class="record-icon"
 						><MIcon
@@ -98,12 +119,53 @@ import { ref, computed, watch } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
 import MTabbar from "@/components/MTabbar.uvue";
-import { healthList, petAge, SPECIES_NAMES, type PetHealth } from "@/api/pet";
+import {
+	healthList,
+	petAge,
+	todayCheckin,
+	checkin,
+	SPECIES_NAMES,
+	type PetHealth
+} from "@/api/pet";
 import { useMaoyu, asset, photo, open, ageText, demoRecords, login } from "@/composables/maoyu";
 const { guest, visiblePets, currentPet, selectedPet, refresh, error } = useMaoyu();
 const recent = ref<PetHealth[]>([]),
 	recordError = ref(""),
-	age = ref<any>(null);
+	age = ref<any>(null),
+	checked = ref<string[]>([]),
+	checking = ref("");
+const dailyItems = computed(() => [
+	"喂食",
+	"陪伴",
+	...(currentPet.value?.species === 1 ? ["遛狗"] : currentPet.value?.species === 0 ? ["铲屎"] : []),
+	"洗澡",
+	"剪指甲"
+]);
+async function quickCheckin(item: string) {
+	const p = currentPet.value;
+	if (!p || checking.value) return;
+	if (checked.value.includes(item)) {
+		open("pet-timeline", `petId=${p.id}`);
+		return;
+	}
+	checking.value = item;
+	try {
+		await checkin({ petId: p.id, itemName: item });
+		checked.value = [...checked.value, item];
+		uni.showToast({ title: `${item}已打卡`, icon: "none" });
+		loadRecords();
+	} catch (e) {
+		/* 请求层已提示 */
+	} finally {
+		checking.value = "";
+	}
+}
+function openRecord(r: PetHealth) {
+	if (!currentPet.value) return;
+	if (r.id <= 0) records(r.type);
+	else if (r.type === 3) open("medication", `petId=${r.petId}`);
+	else open("health-form", `petId=${r.petId}&type=${r.type}&id=${r.id}`);
+}
 const grids = computed(() => [
 	{ label: "体重曲线", icon: "chart", type: 2 },
 	...(currentPet.value?.species < 2
@@ -120,7 +182,12 @@ const grids = computed(() => [
 ]);
 function records(type: number) {
 	if (!currentPet.value) return;
-	open(type === 9 ? "pet-form" : "pet-records", `petId=${currentPet.value.id}&type=${type}`);
+	const id = currentPet.value.id;
+	if (type === 9) open("pet-form", `petId=${id}`);
+	else if (type === 3) open("medication", `petId=${id}`);
+	else if (type === -1) open("pet-timeline", `petId=${id}`);
+	else if (type === 5) open("health-form", `petId=${id}&type=5`);
+	else open("pet-records", `petId=${id}&type=${type}`);
 }
 function select(id: number) {
 	selectedPet.value = id;
@@ -131,6 +198,7 @@ async function loadRecords() {
 	recordError.value = "";
 	recent.value = [];
 	age.value = null;
+	checked.value = [];
 	if (guest.value) {
 		recent.value = demoRecords(p.id)
 			.filter((r) => r.type !== 0)
@@ -140,10 +208,15 @@ async function loadRecords() {
 		return;
 	}
 	try {
-		const [r, a] = await Promise.all([healthList(p.id), petAge(p.id)]);
+		const [r, a, c] = await Promise.all([
+			healthList(p.id),
+			petAge(p.id),
+			todayCheckin(p.id).catch(() => [])
+		]);
 		if (currentPet.value?.id !== p.id) return;
 		recent.value = (r || []).slice(0, 2);
 		age.value = a;
+		checked.value = (c || []).map((x) => x.itemName);
 	} catch (e) {
 		recordError.value = "记录暂未加载，请稍后重试";
 	}
@@ -243,6 +316,20 @@ onShow(async () => {
 	padding: 5px 10px;
 	margin-top: 12px;
 	font-size: 12px;
+}
+.pet-alert.gone {
+	background: #ece9e4;
+	color: #6b665f;
+}
+.checkin {
+	padding: 12px 14px;
+}
+.checkin-items {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
 }
 .hero-note {
 	position: absolute;

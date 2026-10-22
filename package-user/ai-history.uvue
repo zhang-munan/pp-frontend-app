@@ -1,0 +1,221 @@
+<template>
+	<MPage title="咨询记录" back>
+		<view class="m-card m-row search"
+			><MIcon name="search" color="muted" /><input
+				class="m-grow"
+				placeholder="搜索咨询内容"
+				confirm-type="search"
+				v-model="keyword"
+				@confirm="reload"
+		/></view>
+		<view class="m-between tabs"
+			><view class="m-row"
+				><button
+					v-for="(name, i) in ['全部', '宠物', '植物']"
+					:key="name"
+					class="m-plain tab"
+					:class="{ active: kind === i }"
+					@tap="switchKind(i)"
+				>
+					{{ name }}
+				</button></view
+			><button class="m-plain m-link" @tap="toggleEdit">{{ editing ? "完成" : "编辑管理" }}</button></view
+		>
+		<view v-if="error" class="m-error" @tap="reload">{{ error }} · 点击重试</view>
+		<template v-for="g in groups" :key="g.label"
+			><view class="m-sub group">{{ g.label }}</view
+			><view v-for="c in g.items" :key="c.id" class="m-card m-row item" @tap="openItem(c)"
+				><view v-if="editing" class="check" :class="{ on: selected.includes(c.id) }"
+					><MIcon v-if="selected.includes(c.id)" name="check" color="white" :size="14" /></view
+				><image v-if="c.cover" class="cover" :src="c.cover" mode="aspectFill" /><view v-else class="cover icon"
+					><MIcon :name="c.kind === 1 ? 'paw' : c.kind === 2 ? 'leaf' : 'chat'" :size="30" /></view
+				><view class="m-grow"
+					><view class="m-name">{{ c.title }}</view
+					><view class="m-sub line">{{ AI_MODE_NAMES[c.mode] }} · {{ c.summary || "已保存咨询" }}</view></view
+				><MIcon v-if="!editing" name="chevron" color="muted" :size="16"
+			/></view>
+		</template>
+		<view v-if="loading" class="m-note">正在加载…</view>
+		<view v-else-if="!list.length && !error" class="m-card m-empty"
+			><MIcon name="chat" :size="40" /><view class="m-name">还没有咨询记录</view
+			><view class="m-sub">遇到养宠种花的问题，随时问问智慧助手</view></view
+		>
+		<view v-else-if="list.length >= total && total > 0" class="m-note">没有更多了</view>
+		<button v-if="editing" class="m-button full outline danger" :disabled="!selected.length" @tap="removeSelected">
+			删除所选（{{ selected.length }}）</button
+		><button v-else class="m-button full" @tap="startNew">
+			<MIcon name="plus" color="white" :size="18" />发起新咨询
+		</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { aiConversations, removeAiConversations, AI_MODE_NAMES, type AiConversation } from "@/api/ai";
+import { dateKey, addDays, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const list = ref<AiConversation[]>([]),
+	kind = ref(0),
+	keyword = ref(""),
+	page = ref(1),
+	total = ref(0),
+	loading = ref(false),
+	error = ref(""),
+	editing = ref(false),
+	selected = ref<number[]>([]);
+const groups = computed(() => {
+	const today = dateKey(),
+		yesterday = addDays(today, -1);
+	const result: { label: string; items: AiConversation[] }[] = [];
+	for (const c of list.value) {
+		const d = (c.lastTime || "").slice(0, 10);
+		const [y, m, day] = d.split("-");
+		const label =
+			d === today
+				? "今天"
+				: d === yesterday
+					? "昨天"
+					: y === today.slice(0, 4)
+						? `${Number(m)}月${Number(day)}日`
+						: `${y}年${Number(m)}月${Number(day)}日`;
+		const last = result[result.length - 1];
+		if (last?.label === label) last.items.push(c);
+		else result.push({ label, items: [c] });
+	}
+	return result;
+});
+async function fetchPage() {
+	if (loading.value) return;
+	loading.value = true;
+	error.value = "";
+	try {
+		const res = await aiConversations(kind.value, keyword.value.trim(), page.value, 20);
+		list.value = page.value === 1 ? res.list : [...list.value, ...res.list];
+		total.value = res.pagination.total;
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+function reload() {
+	page.value = 1;
+	selected.value = [];
+	fetchPage();
+}
+function switchKind(i: number) {
+	kind.value = i;
+	reload();
+}
+function toggleEdit() {
+	editing.value = !editing.value;
+	selected.value = [];
+}
+function openItem(c: AiConversation) {
+	if (editing.value) {
+		selected.value = selected.value.includes(c.id)
+			? selected.value.filter((i) => i !== c.id)
+			: [...selected.value, c.id];
+		return;
+	}
+	const page = c.mode === 0 ? "ask" : "ai-result";
+	uni.navigateTo({ url: `/package-user/${page}?id=${c.id}` });
+}
+function removeSelected() {
+	uni.showModal({
+		title: `删除 ${selected.value.length} 条咨询记录？`,
+		content: "删除后无法恢复",
+		confirmColor: "#d9534f",
+		success: async (r) => {
+			if (!r.confirm) return;
+			try {
+				await removeAiConversations(selected.value);
+				editing.value = false;
+				reload();
+			} catch (e) {
+				/* The request layer reports the error. */
+			}
+		}
+	});
+}
+function startNew() {
+	const pages = getCurrentPages();
+	const prev: any = pages[pages.length - 2];
+	if (prev?.route === "package-user/ask") uni.navigateBack();
+	else uni.navigateTo({ url: "/package-user/ask" });
+}
+onShow(() => {
+	if (!requireLogin()) return;
+	reload();
+});
+onReachBottom(() => {
+	if (list.value.length < total.value && !loading.value) {
+		page.value++;
+		fetchPage();
+	}
+});
+</script>
+<style scoped>
+.search {
+	gap: 10px;
+}
+.tabs {
+	margin: 4px 4px 8px;
+}
+.tab {
+	font-size: 15px;
+	padding: 6px 12px;
+	color: #66706a;
+	border-bottom: 2px solid transparent;
+}
+.tab.active {
+	color: #329e6b;
+	font-weight: 650;
+	border-bottom-color: #48aa7b;
+}
+.group {
+	margin: 12px 4px 6px;
+}
+.item {
+	gap: 12px;
+}
+.cover {
+	width: 72px;
+	height: 72px;
+	border-radius: 12px;
+	flex-shrink: 0;
+}
+.cover.icon {
+	background: #eef8f1;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.line {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 200px;
+}
+.check {
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	border: 1px solid #c9d3cc;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.check.on {
+	background: #48aa7b;
+	border-color: #48aa7b;
+}
+.danger {
+	color: #d9534f;
+	border-color: #f0c4c2;
+}
+</style>

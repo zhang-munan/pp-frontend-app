@@ -1,21 +1,52 @@
 <template>
-	<MPage title="植物养护攻略" back
-		><image class="guide-image" :src="photo(plant)" mode="aspectFill" /><view class="m-card"
-			><view class="m-heading">{{ plant?.speciesName || "植物" }}的养护笔记</view
-			><view class="m-sub">读懂每一片叶子的小心事</view></view
-		><view v-if="loading" class="m-note">正在查找品种攻略…</view
-		><view v-if="tips" class="m-card"
-			><view class="m-heading">品种养护要点</view
-			><view class="guide-copy">{{ tips }}</view></view
-		><view v-else class="m-card"
-			><view class="m-heading">为绿植多一点观察</view
-			><view class="guide-copy"
-				>每一次浇水前，先看看土壤是否干燥；根据摆放位置、通风和季节，调整自己的养护节奏。</view
+	<MPage :title="speciesName + '养护'" back
+		><view class="m-card hero"
+			><image class="hero-photo" :src="photo(plant)" mode="aspectFill" /><view class="m-grow"
+				><view class="m-heading">{{ speciesName }}</view
+				><view v-if="guide?.species?.scientificName" class="sci">{{
+					guide.species.scientificName
+				}}</view
+				><view class="hero-copy">{{
+					guide?.species?.tips || "读懂每一片叶子的小心事，先观察，再照顾。"
+				}}</view
+				><view v-if="guide?.species" class="m-choices"
+					><text class="tag">{{ LIGHT_NAMES[guide.species.light] || "散射光" }}</text
+					><text class="tag">{{ DIFFICULTY_NAMES[guide.species.difficulty] || "一般" }}</text></view
+				><view v-if="guide?.aiReviewed" class="tag ai">AI 整理 · 人工审核</view></view
+			></view
+		>
+		<view v-if="loading" class="m-note">正在查找品种攻略…</view>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<template v-else
+			><view class="m-heading m-section">养护要点</view
 			><view class="m-sub">{{
-				error || "该品种的专属攻略尚未收录，可向智慧助手咨询。"
-			}}</view></view
-		><button class="m-banner m-plain" @tap="open('ask')">
-			<MIcon name="chat" /><text class="m-grow">遇到养护问题？问问智慧助手</text
+				guide?.species
+					? `掌握这些要点，让你的${speciesName}更加茁壮健康。`
+					: plantSpecies
+						? `「${plantSpecies}」的专属攻略还在整理中，先看看通用要点。`
+						: "通用养护要点，适合大多数室内绿植。"
+			}}</view
+			><view class="section-grid"
+				><view v-for="s in guide?.sections || []" :key="s.section" class="m-card section-card"
+					><view class="m-row"
+						><view class="section-icon"
+							><MIcon :name="ICONS[s.section] || 'leaf'" :size="22" /></view
+						><view class="m-grow"
+							><view class="m-name">{{ s.sectionName }}</view
+							><view class="m-sub">{{ s.title }}</view></view
+						></view
+					><view class="section-copy">{{ s.content }}</view></view
+				></view
+			><view v-if="season" class="m-card m-row season"
+				><MIcon name="calendar" :size="24" /><view class="m-grow"
+					><view class="m-name">季节自适应浇水</view
+					><view class="m-sub">{{ season }}</view></view
+				></view
+			></template
+		>
+		<button class="m-button full" @tap="open('plant-disease')">查看病害急救 ›</button>
+		<button class="m-banner m-plain" @tap="open('ask', 'mode=diagnose')">
+			<MIcon name="chat" /><text class="m-grow">叶子有异样？拍照问问智慧助手</text
 			><MIcon name="chevron" :size="18" /></button
 	></MPage>
 </template>
@@ -23,41 +54,114 @@
 import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-import { searchSpecies } from "@/api/plant";
+import { speciesGuide, LIGHT_NAMES, DIFFICULTY_NAMES, type SpeciesGuide } from "@/api/plant";
 import { useMaoyu, photo, open } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const ICONS = ["sun", "water", "pill", "home", "leaf", "medical"];
 const { visiblePlants, refresh } = useMaoyu(),
 	id = ref(0),
-	tips = ref(""),
+	queryName = ref(""),
+	guide = ref<SpeciesGuide | null>(null),
 	loading = ref(false),
 	error = ref("");
-const plant = computed(
-	() => visiblePlants.value.find((p) => p.id === id.value) || visiblePlants.value[0]
+const plant = computed(() =>
+	id.value ? visiblePlants.value.find((p) => p.id === id.value) : queryName.value ? undefined : visiblePlants.value[0]
 );
-onLoad(async (opts) => {
-	id.value = Number(opts?.id || 0);
-	await refresh();
+const plantSpecies = computed(() => queryName.value || plant.value?.speciesName || "");
+const speciesName = computed(() => guide.value?.species?.name || plantSpecies.value || "绿植");
+const season = computed(() => {
+	const s = guide.value?.species;
+	if (!s?.seasonAdjust) return "";
+	return `春秋约 ${s.waterCycleDays} 天一次，夏季约 ${s.seasonAdjust.summer || "—"} 天，冬季约 ${
+		s.seasonAdjust.winter || "—"
+	} 天；开启“按季节调整”后提醒会自动换挡。`;
+});
+async function load() {
 	loading.value = true;
+	error.value = "";
 	try {
-		const list = await searchSpecies(plant.value?.speciesName || "龟背竹");
-		tips.value = list?.find((s) => s.name === plant.value?.speciesName)?.tips || "";
+		guide.value = await speciesGuide(
+			plant.value && plant.value.id > 0 ? plant.value.speciesId : undefined,
+			plantSpecies.value || undefined
+		);
 	} catch (e) {
-		error.value = "攻略暂时未加载，请稍后重试。";
+		error.value = errorMessage(e);
 	} finally {
 		loading.value = false;
 	}
+}
+onLoad(async (opts) => {
+	id.value = Number(opts?.id || 0);
+	queryName.value = opts?.name ? decodeURIComponent(opts.name) : "";
+	await refresh();
+	await load();
 });
 </script>
 <style scoped>
-.guide-image {
-	width: 100%;
-	height: 215px;
-	border-radius: 16px;
-	margin-bottom: 12px;
+.hero {
+	display: flex;
+	flex-direction: row;
+	gap: 14px;
+	padding: 10px;
 }
-.guide-copy {
-	font-size: 14px;
-	line-height: 1.9;
-	white-space: pre-line;
+.hero-photo {
+	width: 45%;
+	height: 210px;
+	border-radius: 14px;
+	flex-shrink: 0;
+}
+.sci {
+	font-size: 12px;
+	font-style: italic;
+	color: #88918a;
+	margin: 2px 0 8px;
+}
+.hero-copy {
+	font-size: 13px;
+	line-height: 1.7;
+	margin-bottom: 8px;
+}
+.tag {
+	font-size: 11px;
+	padding: 3px 8px;
+	border-radius: 10px;
+	background: #f3f1ec;
+	color: #66706a;
+}
+.tag.ai {
+	display: inline-block;
+	margin-top: 8px;
+	background: #eaf6ef;
+	color: #329e6b;
+}
+.section-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
 	margin: 12px 0;
+}
+.section-card {
+	margin: 0;
+	padding: 12px;
+}
+.section-icon {
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	background: #eef8f1;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.section-copy {
+	font-size: 12px;
+	line-height: 1.7;
+	color: #55605a;
+	margin-top: 10px;
+}
+.season {
+	gap: 12px;
 }
 </style>

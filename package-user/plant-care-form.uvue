@@ -1,0 +1,186 @@
+<template>
+	<MPage :title="TITLES[type] || '记录养护'" back>
+		<view v-if="plant" class="m-sub plant-line">{{ plant.name }} · {{ plant.speciesName || "绿植" }}</view>
+		<view class="m-card"
+			><text class="m-label">养护类型</text
+			><view class="m-choices"
+				><button
+					v-for="t in TYPES"
+					:key="t"
+					class="m-choice"
+					:class="{ selected: type === t }"
+					@tap="switchType(t)"
+				>
+					{{ CARE_TYPE_NAMES[t] }}
+				</button></view
+			></view
+		>
+		<view class="m-card"
+			><view class="m-label">添加照片<text class="m-sub">{{ type === 3 ? "（必填）" : "（可选）" }}</text></view
+			><button class="upload m-plain" @tap="choosePhoto">
+				<image v-if="localPhoto" :src="localPhoto" mode="aspectFill" class="preview" /><view
+					v-else
+					class="placeholder"
+					><MIcon name="camera" :size="32" /><text class="m-sub">点击上传照片</text></view
+				></button
+			></view
+		>
+		<view class="m-card"
+			><text class="m-label">记录日期</text
+			><picker mode="date" :end="dateKey()" :value="occurDate" @change="occurDate = $event.detail.value"
+				><view class="m-input m-row"
+					><MIcon name="calendar" :size="18" /><text class="m-grow">{{ occurDate }}</text
+					><MIcon name="chevron" color="muted" :size="16" /></view></picker
+		></view>
+		<view v-if="type === 3" class="m-card"
+			><text class="m-label">成长里程碑</text
+			><view class="m-choices"
+				><button
+					v-for="m in MILESTONES"
+					:key="m"
+					class="m-choice"
+					:class="{ selected: milestone === m }"
+					@tap="milestone = milestone === m ? '' : m"
+				>
+					{{ m }}
+				</button></view
+			></view
+		>
+		<view v-if="type === 2 || type === 3" class="m-card"
+			><view class="m-label">植株高度<text class="m-sub">（可选）</text></view
+			><view class="m-input m-row"
+				><input class="m-grow" type="digit" placeholder="请输入植株高度" v-model="height" /><text
+					>cm</text
+				></view
+			></view
+		>
+		<view class="m-card"
+			><text class="m-label">记录一下</text
+			><textarea
+				class="m-textarea"
+				maxlength="100"
+				:placeholder="type === 3 ? '今天有什么新变化…' : '比如：用了什么肥、换了多大的盆'"
+				v-model="remark"
+			/><view class="m-sub count">{{ remark.length }}/100</view></view
+		>
+		<view v-if="message" class="m-error-text">{{ message }}</view>
+		<button class="m-button full" :disabled="saving" @tap="save">
+			{{ saving ? "正在保存…" : "保存记录" }}
+		</button>
+		<view class="m-note">{{ type === 3 ? "每一片新叶，都是生活的好消息" : "记下每一次用心的照顾" }}</view>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { upload } from "@/.cool";
+import { addCare, CARE_TYPE_NAMES, MILESTONES } from "@/api/plant";
+import { useMaoyu, dateKey, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const TYPES = [3, 1, 2, 5, 4];
+const TITLES: Record<number, string> = {
+	1: "记录施肥",
+	2: "记录换盆",
+	3: "记录成长",
+	4: "记录养护",
+	5: "记录晒太阳"
+};
+const { visiblePlants, refresh } = useMaoyu(),
+	plantId = ref(0),
+	type = ref(3),
+	localPhoto = ref(""),
+	occurDate = ref(dateKey()),
+	milestone = ref(""),
+	height = ref(""),
+	remark = ref(""),
+	saving = ref(false),
+	message = ref("");
+const plant = computed(() => visiblePlants.value.find((p) => p.id === plantId.value));
+function switchType(t: number) {
+	type.value = t;
+	if (t !== 3) milestone.value = "";
+	if (t !== 2 && t !== 3) height.value = "";
+}
+function choosePhoto() {
+	uni.chooseImage({
+		count: 1,
+		sizeType: ["compressed"],
+		success: (r) => (localPhoto.value = r.tempFilePaths[0])
+	});
+}
+async function save() {
+	if (saving.value) return;
+	message.value = "";
+	if (type.value === 3 && !localPhoto.value) {
+		message.value = "成长记录需要一张照片";
+		return;
+	}
+	const h = height.value.trim() ? Number(height.value) : undefined;
+	if (h !== undefined && (!Number.isFinite(h) || h <= 0 || h > 2000)) {
+		message.value = "请填写有效的植株高度（cm）";
+		return;
+	}
+	if (!requireLogin()) return;
+	if (plantId.value <= 0) {
+		message.value = "示例植物不能记录，请先添加自己的植物";
+		return;
+	}
+	saving.value = true;
+	try {
+		const photoUrl = localPhoto.value
+			? await upload(localPhoto.value, { prefixPath: "maoyu/plants" })
+			: undefined;
+		await addCare({
+			plantId: plantId.value,
+			type: type.value,
+			occurDate: occurDate.value,
+			photo: photoUrl,
+			height: h,
+			milestone: milestone.value || undefined,
+			remark: remark.value.trim() || undefined
+		});
+		await refresh();
+		uni.showToast({ title: "已记录" });
+		setTimeout(() => uni.navigateBack(), 500);
+	} catch (e) {
+		message.value = errorMessage(e);
+	} finally {
+		saving.value = false;
+	}
+}
+onLoad(async (opts) => {
+	plantId.value = Number(opts?.plantId || 0);
+	const t = Number(opts?.type ?? 3);
+	switchType(TYPES.includes(t) ? t : 3);
+	await refresh();
+});
+</script>
+<style scoped>
+.plant-line {
+	margin: 0 4px 10px;
+}
+.upload {
+	width: 100%;
+	height: 180px;
+	border: 1px dashed #c9d3cc;
+	border-radius: 12px;
+	overflow: hidden;
+	margin-top: 8px;
+}
+.preview {
+	width: 100%;
+	height: 100%;
+}
+.placeholder {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+.count {
+	text-align: right;
+}
+</style>

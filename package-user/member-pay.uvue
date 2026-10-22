@@ -1,0 +1,234 @@
+<template>
+	<MPage :title="paid ? '开通成功' : '确认开通'" back
+		><template v-if="paid"
+			><view class="success"
+				><view class="success-icon"><MIcon name="check" color="white" :size="40" /></view
+				><view class="m-heading">欢迎加入毛与叶 Plus</view></view
+			><view class="m-card m-row"
+				><MIcon name="crown" color="amber" :size="30" /><view class="m-grow"
+					><view class="m-name">{{ planName }}</view
+					><view class="m-sub">{{
+						status?.isLifetime
+							? "终身有效"
+							: status?.expireTime
+								? `有效期至 ${status.expireTime.slice(0, 10)}`
+								: "会员权益已生效"
+					}}</view></view
+				></view
+			><view class="m-card"
+				><view class="m-heading">已解锁权益</view
+				><view class="unlocked" v-for="item in unlocked" :key="item"
+					><MIcon name="check" :size="16" /><text>{{ item }}</text></view
+				></view
+			><button class="m-button full" @tap="goHome">去使用</button
+			><button class="m-button outline full" @tap="back">查看会员权益</button></template
+		><template v-else-if="product"
+			><view class="m-card plan"
+				><image class="plan-photo" :src="asset('cat-hero.jpg')" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="plan-title"
+						><MIcon name="crown" color="amber" :size="22" /><text>Plus{{ planName }}</text></view
+					><text v-if="product.firstYear" class="badge">首年优惠</text
+					><view class="m-sub">和毛孩子一起，记录更美好的生活。</view></view
+				></view
+			><view class="m-card"
+				><view class="m-heading">费用明细</view
+				><view class="m-between line"><text>原价</text><text>¥{{ shortYuan(listPrice) }}</text></view
+				><view v-if="discount > 0" class="m-between line"
+					><text>优惠</text><text class="m-red">- ¥{{ shortYuan(discount) }}</text></view
+				><view class="m-divider" /><view class="m-between"
+					><text class="m-name">应付金额</text
+					><text class="total">¥{{ shortYuan(product.payAmount) }}</text></view
+				></view
+			><view class="m-card agree-card" @tap="agreed = !agreed"
+				><view class="m-row"
+					><view class="checkbox" :class="{ checked: agreed }"
+						><MIcon v-if="agreed" name="check" color="white" :size="12" /></view
+					><text>我已阅读并同意</text
+					><text class="m-green" @tap.stop="openAgreement">《毛与叶 Plus 服务协议》</text></view
+				><view class="m-sub">一次性购买，不自动续费；有效期在当前会员到期后顺延。</view></view
+			><view v-if="pending" class="m-banner"
+				><view class="m-grow">支付结果确认中，稍后可在购买记录查看</view
+				><button class="m-plain m-green" @tap="checkAgain">刷新</button></view
+			><button class="m-button full" :disabled="!agreed || paying" @tap="pay('wechat')">
+				{{ paying ? "支付中…" : `微信支付 ¥${shortYuan(product.payAmount)}` }}
+			</button
+			><button v-if="isDev" class="m-button soft full" :disabled="paying" @tap="pay('mock')">
+				模拟支付（仅开发环境）
+			</button></template
+		><view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view
+		><view v-else class="m-note">正在读取套餐…</view></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { isDev } from "@/config";
+import {
+	productList,
+	memberStatus,
+	createOrder,
+	wxPay,
+	mockPay,
+	pollPaid,
+	PLAN_NAMES,
+	type ProductInfo,
+	type MemberStatus
+} from "@/api/order";
+import { asset, open } from "@/composables/maoyu";
+import { shortYuan } from "@/utils/money";
+import { errorMessage } from "@/utils/error";
+const productId = ref(0),
+	product = ref<ProductInfo | null>(null),
+	status = ref<MemberStatus | null>(null),
+	orderId = ref(0),
+	agreed = ref(true),
+	paying = ref(false),
+	paid = ref(false),
+	pending = ref(false),
+	error = ref("");
+const unlocked = ["无限 AI 问诊与识别", "无限档案数量", "高级健康分析", "疫苗本图片导出", "专属皮肤与徽章"];
+const planName = computed(() => PLAN_NAMES[product.value?.planType ?? 0] || product.value?.name || "");
+const listPrice = computed(() =>
+	Math.max(Number(product.value?.sellPrice || 0), Number(product.value?.payAmount || 0))
+);
+const discount = computed(() => listPrice.value - Number(product.value?.payAmount || 0));
+function openAgreement() {
+	open("legal-document", "type=plus_agreement");
+}
+async function load() {
+	error.value = "";
+	try {
+		const list = await productList();
+		product.value = (list || []).find((p) => p.id === productId.value) || null;
+		if (!product.value) error.value = "套餐已下架，请返回重新选择";
+	} catch (e) {
+		error.value = errorMessage(e, "套餐加载失败");
+	}
+}
+async function finish() {
+	paid.value = true;
+	pending.value = false;
+	try {
+		status.value = await memberStatus();
+	} catch (e) {
+		status.value = null;
+	}
+}
+async function pay(method: "wechat" | "mock") {
+	if (!product.value || !agreed.value || paying.value) return;
+	paying.value = true;
+	try {
+		if (!orderId.value) orderId.value = (await createOrder(product.value.id))!.id;
+		const order = method === "mock" ? await mockPay(orderId.value) : await wxPay(orderId.value);
+		if (order) await finish();
+		else pending.value = true;
+	} catch (e) {
+		const message = errorMessage(e, "支付失败，请重试");
+		// 订单超时关闭后需要重新下单
+		if (/超时|重新下单|状态不可支付/.test(message)) orderId.value = 0;
+		uni.showToast({ title: message, icon: "none" });
+	} finally {
+		paying.value = false;
+	}
+}
+async function checkAgain() {
+	if (!orderId.value) return;
+	const order = await pollPaid(orderId.value, 1, 0);
+	if (order) await finish();
+	else uni.showToast({ title: "暂未确认到账，请稍后在购买记录查看", icon: "none" });
+}
+function goHome() {
+	uni.switchTab({ url: "/pages/index" });
+}
+function back() {
+	uni.navigateBack();
+}
+onLoad(async (o) => {
+	productId.value = Number(o?.productId || 0);
+	await load();
+});
+</script>
+<style scoped>
+.plan {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 14px;
+}
+.plan-photo {
+	width: 110px;
+	height: 110px;
+	border-radius: 12px;
+	flex-shrink: 0;
+}
+.plan-title {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	font-size: 21px;
+	font-weight: 700;
+}
+.badge {
+	display: inline-block;
+	background: #fff1d6;
+	color: #d88a14;
+	font-size: 11px;
+	border-radius: 6px;
+	padding: 2px 8px;
+	margin: 6px 0;
+}
+.line {
+	margin-top: 10px;
+	color: #6d746f;
+}
+.total {
+	font-size: 26px;
+	font-weight: 700;
+	color: #f19d21;
+}
+.agree-card {
+	background: #f1f9f3;
+	font-size: 12px;
+	color: #5e6762;
+}
+.checkbox {
+	width: 16px;
+	height: 16px;
+	border-radius: 4px;
+	border: 1px solid #c9cfc9;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.checkbox.checked {
+	background: #48aa7b;
+	border-color: #48aa7b;
+}
+.success {
+	align-items: center;
+	text-align: center;
+	gap: 12px;
+	padding: 18px 0 22px;
+}
+.success-icon {
+	width: 76px;
+	height: 76px;
+	border-radius: 50%;
+	background: #48aa7b;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto 12px;
+}
+.unlocked {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	margin-top: 12px;
+	font-size: 14px;
+}
+</style>

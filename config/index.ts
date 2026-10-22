@@ -7,11 +7,10 @@ export const isDev = process.env.NODE_ENV == "development";
 
 // 无需登录即可访问的公开接口不携带 token，避免本地残留登录态干扰请求。
 export const ignoreTokens: string[] = [
-	"/app/message/info/publicList",
-	"/app/message/reply/info",
-	"/app/message/reply/send",
 	"/app/base/comm/param",
-	"/app/setting/doc/get",
+	"/app/plant/species/search",
+	"/app/plant/guide/species",
+	"/app/plant/guide/diseases",
 	"/app/user/login/mp",
 	"/app/user/login/mpOauthUrl",
 	"/app/user/comm/wxMpConfig"
@@ -20,8 +19,8 @@ export const ignoreTokens: string[] = [
 // 根据环境导出最终配置
 export const config = {
 	name: "毛与叶",
-	locale: "zh-tw",
-	website: "https://example.com",  // TODO: 部署后替换
+	locale: "zh-cn",
+	website: (import.meta.env.VITE_APP_HOST as string) || "https://example.com",
 	showDarkButton: isMp() ? false : true,
 	isCustomTabBar: true,
 	backTop: true,

@@ -1,0 +1,185 @@
+<template>
+	<MPage :title="(data?.owner?.nickName || '家人') + '的家庭'" back>
+		<view v-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<view v-else-if="!data" class="m-note">正在加载…</view>
+		<template v-else
+			><view class="hero"
+				><view class="m-grow"
+					><view class="m-row hero-title"><MIcon name="group" :size="22" /><text>只读共享</text></view
+					><view class="m-sub">你可以查看档案与记录，\n修改请联系主人。</view></view
+				><image class="hero-art" :src="asset('cat-leaves.png')" mode="aspectFit"
+			/></view>
+			<view class="m-card"
+				><view class="m-heading">家庭成员的伙伴</view
+				><view v-if="!cards.length" class="m-sub empty">主人暂时没有共享档案</view
+				><view class="cards"
+					><view v-for="c in cards" :key="c.key" class="buddy" :class="c.kind" @tap="openItem(c.kind, c.id, c.name)"
+						><image class="buddy-photo" :src="c.image" mode="aspectFill" /><view class="m-grow"
+							><view class="m-row m-between"
+								><text class="m-name">{{ c.name }}</text
+								><MIcon :name="c.kind === 'pet' ? 'paw' : 'leaf'" :color="c.kind === 'pet' ? 'amber' : 'green'" :size="16"
+							/></view
+							><view class="m-sub">{{ c.sub }}</view></view
+						></view
+					></view
+				></view
+			>
+			<view class="m-card"
+				><view class="m-between"
+					><text class="m-heading">今日已完成</text><text class="m-sub">{{ data.today }}（今天）</text></view
+				><view v-if="!data.done.length" class="m-sub empty">今天还没有记录</view
+				><view v-for="d in data.done" :key="d.kind + d.id" class="m-row row" @tap="openTarget(d.kind, d.targetId)"
+					><view class="done-icon"><MIcon name="check" color="white" :size="16" /></view
+					><view class="m-grow"
+						><view class="m-name">{{ d.title }}</view
+						><view class="m-sub">{{ d.time || "" }} 已完成</view></view
+					><text class="m-sub remark">{{ d.remark }}</text
+					><MIcon name="chevron" color="muted" :size="14" /></view
+				></view
+			>
+			<view class="m-card"
+				><view class="m-heading">健康提醒</view
+				><view v-if="!data.upcoming.length" class="m-sub empty">近 30 天没有待办提醒</view
+				><view v-for="u in data.upcoming" :key="u.title + u.date" class="m-row row" @tap="openTarget(u.kind, u.targetId)"
+					><view class="up-icon" :class="u.kind"
+						><MIcon :name="u.kind === 'pet' ? 'bell' : 'leaf'" :color="u.kind === 'pet' ? 'amber' : 'green'" :size="18"
+					/></view
+					><view class="m-grow"
+						><view class="m-name">{{ u.title }}</view
+						><view class="m-sub">预计 {{ u.date }}（{{ dayText(u.daysLeft) }}）</view></view
+					><MIcon name="chevron" color="muted" :size="14" /></view
+				></view
+			>
+			<button v-if="cards.length" class="m-button full" @tap="openItem(cards[0].kind, cards[0].id, cards[0].name)">
+				查看完整时间线 ›
+			</button></template
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { familyView, type FamilyView } from "@/api/family";
+import { asset, photo, ageText, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const ownerId = ref(0),
+	data = ref<FamilyView | null>(null),
+	error = ref("");
+const PLANT_STATUS = ["养护中", "已枯萎", "已送人"];
+const cards = computed(() => [
+	...(data.value?.pets || []).map((p) => ({ key: "p" + p.id, kind: "pet", id: p.id, name: p.name, image: photo(p, "pet"), sub: ageText(p.birthday) || p.breed || "" })),
+	...(data.value?.plants || []).map((p) => ({ key: "l" + p.id, kind: "plant", id: p.id, name: p.name, image: photo(p), sub: PLANT_STATUS[p.status] || p.speciesName || "" }))
+]);
+function dayText(n: number) {
+	return n < 0 ? `已超期 ${-n} 天` : n === 0 ? "今天" : `还有 ${n} 天`;
+}
+function openItem(kind: string, id: number, name: string) {
+	const url =
+		kind === "pet"
+			? `/package-user/pet-timeline?petId=${id}&readonly=1&name=${encodeURIComponent(name)}`
+			: `/package-user/plant-growth?plantId=${id}&readonly=1`;
+	uni.navigateTo({ url });
+}
+function openTarget(kind: string, id: number) {
+	const c = cards.value.find((i) => i.kind === kind && i.id === id);
+	if (c) openItem(kind, id, c.name);
+}
+async function load() {
+	error.value = "";
+	try {
+		data.value = await familyView(ownerId.value);
+	} catch (e) {
+		error.value = errorMessage(e, "加载失败，请重试");
+	}
+}
+onLoad((o) => (ownerId.value = Number(o?.ownerId || 0)));
+onShow(() => {
+	if (requireLogin()) load();
+});
+</script>
+<style scoped>
+.hero {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	background: linear-gradient(120deg, #e3f2e8, #f4f9f1);
+	border-radius: 16px;
+	padding: 16px;
+	margin-bottom: 12px;
+}
+.hero-title {
+	gap: 8px;
+	font-size: 18px;
+	font-weight: 700;
+	margin-bottom: 6px;
+}
+.hero .m-sub {
+	white-space: pre-line;
+	line-height: 1.7;
+}
+.hero-art {
+	width: 110px;
+	height: 80px;
+}
+.cards {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+	margin-top: 10px;
+}
+.buddy {
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+	padding: 8px;
+	border-radius: 12px;
+	background: #fff8ec;
+}
+.buddy.plant {
+	background: #eff7f1;
+}
+.buddy-photo {
+	width: 64px;
+	height: 72px;
+	border-radius: 8px;
+	flex-shrink: 0;
+}
+.row {
+	gap: 10px;
+	padding: 10px 12px;
+	background: #f6f8f5;
+	border-radius: 10px;
+	margin-top: 8px;
+}
+.done-icon {
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	background: #48aa7b;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.up-icon {
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	background: #fff1d6;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.up-icon.plant {
+	background: #e3f2e8;
+}
+.remark {
+	max-width: 120px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.empty {
+	padding: 10px 0;
+}
+</style>

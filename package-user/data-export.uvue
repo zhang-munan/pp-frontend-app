@@ -1,0 +1,167 @@
+<template>
+	<MPage title="数据导出" back>
+		<view class="m-card"
+			><view class="m-heading">导出范围</view
+			><view class="m-choices"
+				><button v-for="s in SCOPES" :key="s.key" class="m-choice m-plain" :class="{ selected: scope === s.key }" @tap="scope = s.key">
+					{{ s.name }}
+				</button></view
+			></view
+		>
+		<view class="m-card"
+			><view class="m-heading">时间范围</view
+			><picker :range="RANGES.map((r) => r.name)" :value="rangeIndex" @change="rangeIndex = Number($event.detail.value)"
+				><view class="m-input m-between"><text>{{ RANGES[rangeIndex].name }}</text><MIcon name="chevron" color="muted" :size="16" /></view></picker
+			></view
+		>
+		<view class="m-card"
+			><view class="m-heading">导出内容</view
+			><button v-for="c in CONTENTS" :key="c.key" class="m-plain m-row check-row" @tap="toggle(c.key)">
+				<view class="check" :class="{ on: contents.includes(c.key) }"><MIcon v-if="contents.includes(c.key)" name="check" color="white" :size="14" /></view
+				><text>{{ c.name }}</text><text class="m-sub">{{ c.desc }}</text>
+			</button></view
+		>
+		<view class="m-card"
+			><view class="m-heading">导出格式</view
+			><view class="format"><view class="radio" /><text>Excel 表格（.xlsx）</text></view
+			><view class="m-sub">每类记录一个工作表，照片以链接形式保存</view></view
+		>
+		<button class="m-button full" :disabled="busy || !contents.length" @tap="generate">
+			{{ busy ? "正在生成…" : "生成导出文件" }}
+		</button>
+		<view v-if="file" class="m-card m-row ready"
+			><view class="file-icon"><MIcon name="file" color="white" :size="22" /></view
+			><view class="m-grow"><view class="m-name">文件已准备好</view><view class="m-sub">{{ file.fileName }}</view></view
+			><button class="m-button small outline" :disabled="opening" @tap="openFile">{{ opening ? "打开中…" : "打开文件" }}</button></view
+		>
+		<view class="m-note tip">疫苗本图片单独在疫苗本页导出。打开文件后可通过右上角转发或保存。</view>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { exportData } from "@/api/care";
+import { requireLogin } from "@/composables/maoyu";
+const SCOPES = [
+	{ key: "all", name: "全部" },
+	{ key: "pet", name: "宠物" },
+	{ key: "plant", name: "植物" }
+];
+const RANGES = [
+	{ key: "all", name: "全部时间" },
+	{ key: "month", name: "近 30 天" },
+	{ key: "half", name: "近半年" },
+	{ key: "year", name: "近一年" }
+];
+const CONTENTS = [
+	{ key: "profile", name: "档案", desc: "宠物与植物的基本信息" },
+	{ key: "health", name: "健康记录", desc: "疫苗、驱虫、体重、用药、就医、打卡" },
+	{ key: "growth", name: "生长记录", desc: "浇水、施肥、换盆与成长" },
+	{ key: "photo", name: "照片", desc: "照片链接清单" }
+];
+const scope = ref("all"),
+	rangeIndex = ref(0),
+	contents = ref(CONTENTS.map((c) => c.key)),
+	busy = ref(false),
+	opening = ref(false),
+	file = ref<{ url: string; fileName: string } | null>(null);
+function toggle(key: string) {
+	contents.value = contents.value.includes(key) ? contents.value.filter((k) => k !== key) : [...contents.value, key];
+}
+async function generate() {
+	if (busy.value || !requireLogin()) return;
+	busy.value = true;
+	file.value = null;
+	try {
+		file.value = await exportData({ scope: scope.value, range: RANGES[rangeIndex.value].key, contents: contents.value });
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		busy.value = false;
+	}
+}
+function openFile() {
+	if (!file.value || opening.value) return;
+	opening.value = true;
+	uni.downloadFile({
+		url: file.value.url,
+		success: (r) => {
+			if (r.statusCode !== 200) {
+				uni.showToast({ title: "下载失败，请重试", icon: "none" });
+				return;
+			}
+			uni.openDocument({
+				filePath: r.tempFilePath,
+				fileType: "xlsx",
+				showMenu: true,
+				fail: () => uni.showToast({ title: "无法打开文件", icon: "none" })
+			});
+		},
+		fail: () => uni.showToast({ title: "下载失败，请检查网络", icon: "none" }),
+		complete: () => (opening.value = false)
+	});
+}
+onShow(() => requireLogin());
+</script>
+<style scoped>
+.check-row {
+	width: 100%;
+	justify-content: flex-start;
+	gap: 10px;
+	min-height: 40px;
+	text-align: left;
+}
+.check-row .m-sub {
+	margin-left: auto;
+}
+.check {
+	width: 20px;
+	height: 20px;
+	border-radius: 5px;
+	border: 1.5px solid #9aa19c;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.check.on {
+	background: #48aa7b;
+	border-color: #48aa7b;
+}
+.format {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 10px;
+	border: 1px solid #48aa7b;
+	background: #eef7f1;
+	border-radius: 12px;
+	padding: 12px 14px;
+	margin: 10px 0 6px;
+	font-weight: 600;
+}
+.radio {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	border: 5px solid #48aa7b;
+	background: #fff;
+}
+.ready {
+	background: #eef7f1;
+	margin-top: 14px;
+}
+.file-icon {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: #48aa7b;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.tip {
+	margin-top: 10px;
+}
+</style>

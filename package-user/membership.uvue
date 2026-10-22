@@ -1,66 +1,174 @@
 <template>
 	<MPage title="毛与叶 Plus" back
-		><view class="plus-hero"
-			><MIcon name="crown" color="amber" :size="50" /><view class="m-heading"
-				>让陪伴多一点从容</view
-			><view class="m-sub">更多记录空间，更多美好回忆</view></view
+		><view v-if="status?.isPlus" class="member-card"
+			><view class="m-grow"
+				><view class="member-title">毛与叶 <text class="plus">Plus</text></view
+				><view class="m-sub">{{
+					status.isLifetime ? "终身会员 · 长期有效" : `有效期至 ${status.expireTime?.slice(0, 10)}`
+				}}</view></view
+			><MIcon name="crown" color="amber" :size="44" /></view
+		><view v-else class="plus-hero"
+			><MIcon name="paw" color="amber" :size="40" /><view class="m-heading"
+				>让爱更科学 陪伴更长久</view
+			><view class="m-sub">解锁更多专业功能，守护毛孩子的健康生活</view></view
 		><view class="m-card"
-			><view class="m-heading">Plus 权益</view
-			><view class="benefit" v-for="item in benefits" :key="item"
-				><MIcon name="check" :size="18" /><text>{{ item }}</text></view
+			><view class="m-heading">{{ status?.isPlus ? "我的权益" : "Plus 权益" }}</view
+			><view class="benefit" v-for="item in benefits" :key="item.title"
+				><view class="benefit-icon"><MIcon :name="item.icon" :size="20" /></view
+				><view class="m-grow"
+					><view class="benefit-title">{{ item.title }}</view
+					><view class="m-sub">{{ item.desc }}</view></view
+				></view
 			></view
-		><view class="prices"
-			><button
-				v-for="p in plans"
-				:key="p.name"
-				class="price m-plain"
-				:class="{ selected: plan === p.name }"
-				@tap="plan = p.name"
-			>
-				<text>{{ p.name }}</text
-				><text class="amount">¥{{ p.price }}</text
-				><text class="m-sub">{{ p.note }}</text>
-			</button></view
-		><view class="m-card m-section"
-			><view class="m-name">会员购买即将开放</view
-			><view class="m-sub"
-				>以上为计划权益与价格。正式开放后即可购买，当前不收取费用。</view
-			></view
-		></MPage
-	>
+		><view v-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view
+		><template v-if="!status?.isLifetime && products.length"
+			><view class="m-heading m-section">{{ status?.isPlus ? "续费" : "选择套餐" }}</view
+			><view class="prices"
+				><button
+					v-for="p in products"
+					:key="p.id"
+					class="price m-plain"
+					:class="{ selected: selectedId === p.id }"
+					@tap="selectedId = p.id"
+				>
+					<text class="price-name">{{ PLAN_NAMES[p.planType] || p.name }}</text
+					><text v-if="p.firstYear" class="m-sub">首年</text
+					><text class="amount">¥{{ shortYuan(p.payAmount) }}</text
+					><text v-if="p.payAmount < p.sellPrice" class="strike"
+						>¥{{ shortYuan(p.sellPrice) }}</text
+					><text v-else-if="p.tagContent" class="tag">{{ p.tagContent }}</text>
+				</button></view
+			><view class="m-note">核心记录与提醒永久免费 · 一次性购买，不自动续费</view
+			><template v-if="canBuy"
+				><view class="agree" @tap="agreed = !agreed"
+					><view class="checkbox" :class="{ checked: agreed }"
+						><MIcon v-if="agreed" name="check" color="white" :size="12" /></view
+					><text>我已阅读并同意</text
+					><text class="m-green" @tap.stop="openAgreement">《毛与叶 Plus 服务协议》</text></view
+				><button class="m-button full" :disabled="!agreed || !selected" @tap="buy">
+					{{ status?.isPlus ? "立即续费" : "立即开通" }}
+				</button></template
+			><view v-else class="m-card m-section"
+				><view class="m-name">iOS 暂不支持购买</view
+				><view class="m-sub">根据苹果平台规定，请在安卓手机或电脑版微信中开通。</view></view
+			></template
+		><view v-if="!guest" class="m-card m-section"
+			><button class="m-menu-row m-plain" @tap="open('orders')">
+				<MIcon name="file" color="muted" :size="20" /><text>购买记录</text
+				><MIcon name="chevron" color="muted" :size="15" /></button
+			><button class="m-menu-row m-plain" @tap="openAgreement">
+				<MIcon name="book" color="muted" :size="20" /><text>会员协议</text
+				><MIcon name="chevron" color="muted" :size="15" /></button></view
+	></MPage>
 </template>
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-const plan = ref("年卡"),
-	plans = [
-		{ name: "月卡", price: 6, note: "一次性购买" },
-		{ name: "年卡", price: 15, note: "首年优惠 · 常规 ¥25" },
-		{ name: "终身卡", price: 48, note: "限量早鸟" }
-	],
-	benefits = [
-		"宠物与植物档案数量不限",
-		"更多 AI 养护咨询",
-		"电子疫苗本导出",
-		"年度报告美化与专属皮肤"
-	];
+import {
+	memberStatus,
+	productList,
+	isIOS,
+	PLAN_NAMES,
+	type MemberStatus,
+	type ProductInfo
+} from "@/api/order";
+import { useMaoyu, open, requireLogin } from "@/composables/maoyu";
+import { shortYuan } from "@/utils/money";
+import { errorMessage } from "@/utils/error";
+const { guest, refresh } = useMaoyu();
+const status = ref<MemberStatus | null>(null),
+	products = ref<ProductInfo[]>([]),
+	selectedId = ref(0),
+	agreed = ref(false),
+	error = ref("");
+const benefits = [
+	{ icon: "chat", title: "无限 AI 问诊与识别", desc: "随时提问，拍照识别，获取专业建议" },
+	{ icon: "file", title: "无限档案数量", desc: "宠物与植物不限数量，完整记录不设上限" },
+	{ icon: "chart", title: "高级健康分析", desc: "体重趋势预测，提供个性化建议" },
+	{ icon: "vaccine", title: "疫苗本图片导出", desc: "一键导出高清图片，便于保存与分享" },
+	{ icon: "crown", title: "专属皮肤与徽章", desc: "完整版年度报告，记录与爱宠的独特旅程" }
+];
+const selected = computed(() => products.value.find((p) => p.id === selectedId.value));
+const canBuy = computed(() => !isIOS() || !!status.value?.iosPayEnabled);
+function openAgreement() {
+	open("legal-document", "type=plus_agreement");
+}
+function buy() {
+	if (!selected.value || !agreed.value) return;
+	if (!requireLogin()) return;
+	open("member-pay", `productId=${selected.value.id}`);
+}
+async function load() {
+	error.value = "";
+	try {
+		const [list, s] = await Promise.all([
+			productList(),
+			guest.value ? Promise.resolve(null) : memberStatus()
+		]);
+		products.value = list || [];
+		status.value = s;
+		if (!products.value.some((p) => p.id === selectedId.value)) {
+			const year = products.value.find((p) => p.planType === 1);
+			selectedId.value = (year || products.value[0])?.id || 0;
+		}
+	} catch (e) {
+		error.value = errorMessage(e, "套餐加载失败");
+	}
+}
+onShow(async () => {
+	await refresh();
+	await load();
+});
 </script>
 <style scoped>
 .plus-hero {
 	background: #fff4d9;
 	border-radius: 16px;
-	padding: 28px 16px;
+	padding: 24px 16px;
 	text-align: center;
 	align-items: center;
-	gap: 12px;
-	margin-bottom: 16px;
+	gap: 8px;
+	margin-bottom: 14px;
+}
+.member-card {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	background: linear-gradient(120deg, #fff1cf, #fdf7e8);
+	border-radius: 16px;
+	padding: 22px 18px;
+	margin-bottom: 14px;
+}
+.member-title {
+	font-size: 22px;
+	font-weight: 700;
+	color: #5b4216;
+}
+.plus {
+	color: #c8962e;
+	font-style: italic;
 }
 .benefit {
 	display: flex;
 	flex-direction: row;
-	gap: 10px;
-	margin-top: 18px;
+	align-items: center;
+	gap: 12px;
+	margin-top: 14px;
+}
+.benefit-icon {
+	width: 38px;
+	height: 38px;
+	border-radius: 50%;
+	background: #edf7f0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.benefit-title {
+	font-size: 15px;
+	font-weight: 600;
 }
 .prices {
 	display: flex;
@@ -70,22 +178,56 @@ const plan = ref("年卡"),
 .price {
 	flex: 1;
 	flex-direction: column;
-	gap: 8px;
+	gap: 4px;
 	border: 1px solid #e9e8df;
 	border-radius: 12px;
-	padding: 18px 4px;
+	padding: 16px 4px;
 	background: #fff;
 }
 .price.selected {
-	border-color: #d8ae45;
-	background: #fff8e8;
+	border-color: #48aa7b;
+	background: #f1f9f3;
 }
-.price .m-sub {
-	font-size: 9px;
+.price-name {
+	font-size: 14px;
+	font-weight: 600;
 }
 .amount {
-	font-size: 29px;
-	color: #b88a2b;
-	font-weight: 650;
+	font-size: 27px;
+	color: #18362b;
+	font-weight: 700;
+}
+.strike {
+	font-size: 11px;
+	color: #a0a6a2;
+	text-decoration: line-through;
+}
+.tag {
+	font-size: 11px;
+	color: #f19d21;
+}
+.agree {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	font-size: 12px;
+	color: #747c76;
+	margin-top: 8px;
+}
+.checkbox {
+	width: 16px;
+	height: 16px;
+	border-radius: 4px;
+	border: 1px solid #c9cfc9;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-right: 4px;
+}
+.checkbox.checked {
+	background: #48aa7b;
+	border-color: #48aa7b;
 }
 </style>

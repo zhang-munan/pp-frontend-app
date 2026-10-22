@@ -1,133 +1,332 @@
 <template>
-	<MPage title="智慧助手" back
-		><template v-if="!messages.length"
-			><view class="assistant-welcome"
-				><view class="assistant-icon"><MIcon name="leaf" :size="32" /></view
-				><view class="welcome-bubble">你好呀，养宠种花的问题都可以问我～</view></view
-			><view class="assist-options"
-				><button class="assist-option m-plain warm" @tap="photoNotice">
-					<MIcon name="camera" color="amber" :size="34" /><view class="m-name"
-						>拍照问诊</view
-					><view class="m-sub">拍下宠物或植物，记录你的问题</view></button
-				><button class="assist-option m-plain green" @tap="photoNotice">
-					<MIcon name="leaf" :size="34" /><view class="m-name">识品种</view
-					><view class="m-sub">认识你的小伙伴，了解养护要点</view></button
-				><button class="assist-option m-plain blue" @tap="focus = true">
-					<MIcon name="chat" :size="34" /><view class="m-name">直接提问</view
-					><view class="m-sub">任何养宠种花的问题，都可以问我</view>
-				</button></view
-			><view class="m-heading m-section">大家都在问</view
-			><view class="quick-grid"
-				><button
-					v-for="q in quicks"
-					:key="q.text"
-					class="m-plain quick"
-					@tap="send(q.text)"
-				>
-					<MIcon :name="q.icon" :size="20" /><text>{{ q.text }}</text>
-				</button></view
-			><view v-if="currentPet" class="m-heading m-section">我的小伙伴</view
-			><view v-if="currentPet" class="m-card m-row"
-				><image class="m-avatar" :src="photo(currentPet, 'pet')" mode="aspectFill" /><view
+	<MPage title="智慧助手" back>
+		<view v-if="limited" class="m-card m-empty limit"
+			><image class="limit-art" :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-heading"
+				>今天的免费次数用完啦</view
+			><view class="m-sub">{{ limited }}</view
+			><view class="m-note">已有的咨询记录仍可随时查看</view
+			><button class="m-button full" @tap="open('membership')">了解 Plus</button
+			><button class="m-button full outline" @tap="back">明天再来</button
+			><button class="m-plain m-link" @tap="open('ai-history')">查看咨询记录 ›</button></view
+		>
+		<view v-else-if="failed" class="m-card m-empty"
+			><MIcon name="help" color="muted" :size="44" /><view class="m-heading">刚才没连上，稍后再试</view
+			><view class="m-sub">问题已保留，失败不扣次数。</view
+			><view class="failed-question m-row"
+				><MIcon name="leaf" :size="18" /><text class="m-grow">{{ question || "照片咨询" }}</text></view
+			><button class="m-button full" :disabled="sending" @tap="retry">重新发送</button
+			><button class="m-button full outline" @tap="open('ai-history')">返回查看记录</button></view
+		>
+		<template v-else
+			><template v-if="!messages.length"
+				><view class="assistant-welcome"
+					><view class="assistant-icon"><MIcon name="leaf" :size="32" /></view
+					><view class="welcome-bubble m-grow">你好呀，养宠种花的问题都可以问我～</view
+					><button class="m-plain m-link" @tap="open('ai-history')">记录 ›</button></view
+				><view class="assist-options"
+					><button class="assist-option m-plain warm" @tap="photoConsult">
+						<MIcon name="camera" color="amber" :size="34" /><view class="m-name">拍照问诊</view
+						><view class="m-sub">拍下宠物或植物，帮你分析原因</view></button
+					><button class="assist-option m-plain green" @tap="identify">
+						<MIcon name="leaf" :size="34" /><view class="m-name">识品种</view
+						><view class="m-sub">认识你的小伙伴，一键建档</view></button
+					><button class="assist-option m-plain blue" @tap="setMode(0, true)">
+						<MIcon name="chat" :size="34" /><view class="m-name">直接提问</view
+						><view class="m-sub">任何养宠种花的问题，都可以问我</view>
+					</button></view
+				><view class="m-heading m-section">大家都在问</view
+				><view class="quick-grid"
+					><button v-for="q in quicks" :key="q.text" class="m-plain quick" @tap="quickAsk(q)">
+						<MIcon :name="q.icon" :size="20" /><text>{{ q.text }}</text>
+					</button></view
+				><view v-if="currentPet" class="m-heading m-section">我的小伙伴</view
+				><view v-if="currentPet" class="m-card m-row"
+					><image class="m-avatar" :src="photo(currentPet, 'pet')" mode="aspectFill" /><view class="m-grow"
+						><view class="m-name">{{ currentPet.name }}</view
+						><view class="m-sub"
+							>{{ ageText(currentPet.birthday) }} · {{ guest ? "示例档案" : currentPet.breed }}</view
+						></view
+					><button class="m-plain m-green" @tap="open('archives')">查看档案 ›</button></view
+				></template
+			>
+			<view v-for="(m, i) in messages" :key="m.id ? 'm' + m.id : 'l' + i" class="chat-message" :class="m.role === 0 ? 'user' : 'assistant'"
+				><view class="bubble"
+					><image v-if="m.image" class="bubble-image" :src="m.image" mode="aspectFill" /><template
+						v-if="m.role === 1 && m.structured"
+						><view class="m-name">{{ structuredTitle(m) }}</view
+						><view class="m-sub">{{ structuredSummary(m) }}</view
+						><button class="m-plain m-link" @tap="open('ai-result', 'id=' + conversationId)">
+							查看{{ mode === 3 ? "识别" : "分析" }}结果 ›
+						</button></template
+					><text v-else>{{ m.content }}</text></view
+				></view
+			><view v-if="sending" class="m-note">正在认真想一想…</view
+			><view v-if="error" class="m-error-text">{{ error }}</view>
+			<view v-if="!conversationId" class="m-card setup"
+				><view class="m-choices"
+					><button
+						v-for="i in [0, 1, 2]"
+						:key="i"
+						class="m-choice"
+						:class="{ selected: mode === i }"
+						@tap="setMode(i)"
+					>
+						{{ AI_MODE_NAMES[i] }}
+					</button></view
+				><view v-if="targets.length" class="m-sub target-label">关联档案（可选，回答会更贴合 TA）</view
+				><view v-if="targets.length" class="m-choices"
+					><button
+						v-for="t in targets"
+						:key="t.type + '-' + t.id"
+						class="m-choice"
+						:class="{ selected: target?.type === t.type && target?.id === t.id }"
+						@tap="toggleTarget(t)"
+					>
+						{{ t.type === 1 ? "🐾" : "🌿" }} {{ t.name }}
+					</button></view
+				></view
+			>
+			<view class="m-banner quota"
+				><MIcon :name="quota?.isPlus ? 'crown' : 'chat'" :color="quota?.isPlus ? 'amber' : 'green'" /><view
 					class="m-grow"
-					><view class="m-name">{{ currentPet.name }}</view
-					><view class="m-sub"
-						>{{ ageText(currentPet.birthday) }} ·
-						{{ guest ? "示例档案" : currentPet.breed }}</view
-					></view
-				><button class="m-plain m-green" @tap="open('archives')">查看档案 ›</button></view
-			></template
+					>{{ quotaText }}</view
+				></view
+			>
+			<view v-if="localImage" class="pending-image m-row"
+				><image :src="localImage" mode="aspectFill" /><text class="m-grow m-sub">{{
+					mode === 3 ? "将识别这张照片" : "照片会一起发送"
+				}}</text
+				><button class="m-plain" aria-label="移除照片" @tap="clearImage">
+					<MIcon name="close" color="muted" :size="18" /></button
+			></view>
+			<view class="composer"
+				><button class="m-plain" aria-label="添加照片" @tap="pickImage()">
+					<MIcon name="camera" color="muted" :size="22" /></button
+				><input
+					class="m-input"
+					:focus="focus"
+					v-model="question"
+					:placeholder="conversationId ? '继续追问…' : placeholder"
+					maxlength="500"
+					confirm-type="send"
+					@confirm="send()"
+				/><button
+					class="m-button small"
+					:disabled="sending || (!question.trim() && !localImage)"
+					@tap="send()"
+				>
+					发送
+				</button></view
+			><view class="m-note">{{ disclaimer || "AI 建议仅供参考，不能替代专业诊疗" }}</view>
+			<button v-if="conversationId" class="m-plain m-link new-chat" @tap="reset">发起新咨询</button></template
 		>
-		<view v-for="(m, i) in messages" :key="i" class="chat-message" :class="m.role"
-			><view class="bubble">{{ m.text }}</view></view
-		><view v-if="sending" class="m-note">正在认真想一想…</view
-		><view v-if="error" class="m-error"
-			>{{ error }}<button class="m-plain m-green" @tap="send()">重试</button></view
-		><view class="m-banner quota"
-			><MIcon name="chat" /><view class="m-grow">{{
-				guest
-					? "登录后开启养护咨询"
-					: quota
-						? `今日剩余 ${quota.remaining} 次`
-						: "额度暂未获取"
-			}}</view></view
-		>
-		<view class="composer"
-			><input
-				class="m-input"
-				:focus="focus"
-				v-model="question"
-				placeholder="请输入你的问题…"
-				confirm-type="send"
-				@confirm="send()"
-			/><button class="m-button small" :disabled="sending || !question.trim()" @tap="send()">
-				发送
-			</button></view
-		><view class="m-note">AI 建议仅供参考，不能替代专业诊疗</view></MPage
-	>
+	</MPage>
 </template>
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-import { ask, aiQuota } from "@/api/care";
-import { useMaoyu, photo, open, ageText, requireLogin } from "@/composables/maoyu";
-const { guest, currentPet, refresh } = useMaoyu(),
+import { upload } from "@/.cool";
+import {
+	askAi,
+	aiQuota,
+	aiDetail,
+	AI_MODES,
+	AI_MODE_NAMES,
+	type AiQuota,
+	type AiMessage,
+	type AiAnalysis,
+	type AiIdentify
+} from "@/api/ai";
+import { useMaoyu, photo, open, asset, ageText, requireLogin } from "@/composables/maoyu";
+const { guest, currentPet, visiblePets, visiblePlants, refresh } = useMaoyu(),
+	mode = ref(0),
+	conversationId = ref(0),
 	question = ref(""),
+	localImage = ref(""),
+	uploaded = ref(""),
+	target = ref<{ type: number; id: number; name: string } | null>(null),
 	sending = ref(false),
 	focus = ref(false),
 	error = ref(""),
-	quota = ref<any>(null),
-	messages = ref<{ role: string; text: string }[]>([]);
+	failed = ref(false),
+	limited = ref(""),
+	disclaimer = ref(""),
+	quota = ref<AiQuota | null>(null),
+	messages = ref<AiMessage[]>([]);
 const quicks = [
-	{ text: "猫咪吐了怎么办", icon: "cat" },
-	{ text: "多肉叶子发软", icon: "leaf" },
-	{ text: "幼猫疫苗时间表", icon: "vaccine" },
-	{ text: "绿萝黄叶", icon: "water" }
+	{ text: "猫咪吐了怎么办", icon: "cat", mode: 1 },
+	{ text: "多肉叶子发软", icon: "leaf", mode: 2 },
+	{ text: "幼猫疫苗时间表", icon: "vaccine", mode: 0 },
+	{ text: "绿萝黄叶", icon: "water", mode: 2 }
 ];
-function photoNotice() {
-	uni.showModal({
-		title: "拍照咨询暂未开放",
-		content: "你可以先用文字描述问题，或在伙伴档案里添加照片。",
-		showCancel: false
+const placeholder = computed(
+	() =>
+		[
+			"请输入你的问题…",
+			"描述一下症状：持续多久、精神食欲如何…",
+			"描述一下状况：叶子哪里不对劲…",
+			"可以补充拍摄位置等信息"
+		][mode.value]
+);
+const targets = computed(() => {
+	const pets = visiblePets.value.filter((p) => p.id > 0).map((p) => ({ type: 1, id: p.id, name: p.name }));
+	const plants = visiblePlants.value.filter((p) => p.id > 0).map((p) => ({ type: 2, id: p.id, name: p.name }));
+	return mode.value === 1 ? pets : mode.value === 2 ? plants : [...pets, ...plants];
+});
+const quotaText = computed(() => {
+	if (guest.value) return "登录后开启养护咨询";
+	const q = quota.value;
+	if (!q) return "额度暂未获取";
+	if (q.isPlus) return "Plus 会员 · 咨询与识别不限次数";
+	return `今日咨询剩余 ${q.ask.remaining} 次 · 识别剩余 ${q.identify.remaining} 次`;
+});
+function structuredTitle(m: AiMessage) {
+	const s: any = m.structured;
+	if (mode.value === 3) return s.confident ? `识别为「${s.name}」` : "这次还不能确定品种";
+	return (s as AiAnalysis).title || "分析结果";
+}
+function structuredSummary(m: AiMessage) {
+	const s: any = m.structured;
+	if (mode.value === 3) {
+		const id = s as AiIdentify;
+		return id.confident ? id.description || id.tips : "可能是：" + (id.candidates.map((c) => c.name).join("、") || id.name || "—");
+	}
+	return (s as AiAnalysis).summary;
+}
+function setMode(i: number, withFocus = false) {
+	mode.value = i;
+	if (target.value && !targets.value.some((t) => t.type === target.value!.type && t.id === target.value!.id)) {
+		target.value = null;
+	}
+	if (withFocus) focus.value = true;
+}
+function toggleTarget(t: { type: number; id: number; name: string }) {
+	target.value = target.value?.type === t.type && target.value?.id === t.id ? null : t;
+}
+function pickImage(after?: () => void) {
+	uni.chooseImage({
+		count: 1,
+		sizeType: ["compressed"],
+		sourceType: ["camera", "album"],
+		success: (r) => {
+			localImage.value = r.tempFilePaths[0];
+			uploaded.value = "";
+			after?.();
+		}
 	});
+}
+function clearImage() {
+	localImage.value = "";
+	uploaded.value = "";
+}
+function photoConsult() {
+	if (!requireLogin()) return;
+	uni.showActionSheet({
+		itemList: ["宠物问诊", "植物诊断"],
+		success: (r) => {
+			setMode(r.tapIndex === 0 ? 1 : 2);
+			pickImage(() => (focus.value = true));
+		}
+	});
+}
+function identify() {
+	if (!requireLogin()) return;
+	setMode(3);
+	pickImage(() => send());
+}
+function quickAsk(q: { text: string; mode: number }) {
+	setMode(q.mode);
+	send(q.text);
+}
+function back() {
+	uni.navigateBack({ fail: () => uni.switchTab({ url: "/pages/index" }) });
+}
+function reset() {
+	conversationId.value = 0;
+	messages.value = [];
+	disclaimer.value = "";
+	error.value = "";
+	setMode(0);
 }
 async function send(text = "") {
 	const value = (text || question.value).trim();
-	if (!value || sending.value) return;
+	if ((!value && !localImage.value) || sending.value) return;
 	question.value = value;
 	if (!requireLogin()) return;
 	sending.value = true;
 	error.value = "";
+	failed.value = false;
 	try {
-		const result = await ask(value);
-		if (!result) throw new Error("empty");
-		if (result.limited) {
-			error.value = result.message || "今日额度已用尽，明天再来看看";
-			return;
+		if (localImage.value && !uploaded.value) {
+			uploaded.value = await upload(localImage.value, { prefixPath: "maoyu/ai" });
 		}
+		const res = await askAi({
+			conversationId: conversationId.value || undefined,
+			mode: AI_MODES[mode.value],
+			question: value || undefined,
+			image: uploaded.value || undefined,
+			targetType: conversationId.value ? undefined : target.value?.type,
+			targetId: conversationId.value ? undefined : target.value?.id
+		});
 		messages.value.push(
-			{ role: "user", text: value },
-			{ role: "assistant", text: result.answer || "暂未获得回复，请稍后重试" }
+			{
+				id: 0,
+				role: 0,
+				content: value || (mode.value === 3 ? "帮我识别这张照片" : "请帮我看看这张照片"),
+				image: uploaded.value || undefined,
+				structured: null
+			},
+			res.message
 		);
+		conversationId.value = res.conversationId;
+		mode.value = res.mode;
+		quota.value = res.quota;
+		disclaimer.value = res.disclaimer;
 		question.value = "";
-		quota.value = { remaining: Math.max(0, result.limit - result.used), limit: result.limit };
-	} catch (e) {
-		error.value = "连接暂时中断，你的问题已保留，请重试。";
+		clearImage();
+		if (res.message.structured) open("ai-result", "id=" + res.conversationId);
+	} catch (e: any) {
+		if (e?.code === 2001) limited.value = e.message || "明天会恢复免费次数";
+		else if (e?.code && !/保留|不可用|未配置/.test(e.message || "")) error.value = e.message;
+		else failed.value = true;
 	} finally {
 		sending.value = false;
 	}
 }
-onShow(async () => {
-	await refresh();
-	if (!guest.value) {
-		try {
-			quota.value = await aiQuota();
-		} catch (e) {
-			quota.value = null;
-		}
+function retry() {
+	failed.value = false;
+	send();
+}
+async function loadQuota() {
+	if (guest.value) return;
+	try {
+		quota.value = await aiQuota();
+	} catch (e) {
+		quota.value = null;
 	}
+}
+async function loadConversation(id: number) {
+	try {
+		const d = await aiDetail(id);
+		conversationId.value = d.conversation.id;
+		mode.value = d.conversation.mode;
+		disclaimer.value = d.disclaimer;
+		messages.value = d.messages;
+	} catch (e: any) {
+		error.value = e?.message || "咨询记录加载失败";
+	}
+}
+onLoad(async (opts) => {
+	await refresh();
+	const m = AI_MODES.indexOf(opts?.mode || "");
+	if (m >= 0) setMode(m);
+	if (opts?.petId) target.value = targets.value.find((t) => t.type === 1 && t.id === Number(opts.petId)) || null;
+	if (opts?.plantId) target.value = targets.value.find((t) => t.type === 2 && t.id === Number(opts.plantId)) || null;
+	if (opts?.id && !guest.value) await loadConversation(Number(opts.id));
+	if (opts?.question) question.value = decodeURIComponent(opts.question);
 });
+onShow(loadQuota);
 </script>
 <style scoped>
 .assistant-welcome {
@@ -196,6 +395,21 @@ onShow(async () => {
 	font-size: 12px;
 	min-height: 43px;
 }
+.setup {
+	margin-top: 12px;
+}
+.target-label {
+	margin: 10px 0 6px;
+}
+.pending-image {
+	gap: 10px;
+	margin-bottom: 8px;
+}
+.pending-image image {
+	width: 56px;
+	height: 56px;
+	border-radius: 10px;
+}
 .composer {
 	display: flex;
 	flex-direction: row;
@@ -231,7 +445,33 @@ onShow(async () => {
 	line-height: 1.8;
 	white-space: pre-wrap;
 }
+.bubble-image {
+	width: 160px;
+	height: 160px;
+	border-radius: 10px;
+	display: block;
+	margin-bottom: 6px;
+}
 .user .bubble {
 	background: #e2f3e8;
+}
+.limit {
+	gap: 10px;
+}
+.limit-art {
+	width: 160px;
+	height: 120px;
+}
+.failed-question {
+	gap: 8px;
+	background: #f6f5f1;
+	border-radius: 12px;
+	padding: 12px;
+	width: 100%;
+	margin: 8px 0;
+}
+.new-chat {
+	display: block;
+	margin: 8px auto 0;
 }
 </style>

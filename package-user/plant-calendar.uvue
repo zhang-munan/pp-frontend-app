@@ -1,0 +1,317 @@
+<template>
+	<MPage title="养护日历" back>
+		<view v-if="guest" class="m-card m-empty"
+			><MIcon name="calendar" :size="40" /><view class="m-name">登录后查看养护日历</view
+			><view class="m-sub">浇水、施肥计划会按季节自动排进日历</view
+			><button class="m-button full" @tap="login">去登录</button></view
+		>
+		<template v-else
+			><view class="m-card"
+				><view class="m-between"
+					><button class="m-plain nav" aria-label="上个月" @tap="shift(-1)">
+						<MIcon name="back" color="muted" :size="16" /></button
+					><text class="month">{{ monthLabel }}</text
+					><button class="m-plain nav" aria-label="下个月" @tap="shift(1)">
+						<MIcon name="chevron" color="muted" :size="16" /></button
+				></view>
+				<view class="grid"
+					><text v-for="w in WEEK" :key="w" class="weekday">{{ w }}</text
+					><button
+						v-for="c in cells"
+						:key="c.key"
+						class="m-plain cell"
+						:disabled="!c.day"
+						@tap="c.day && (selected = c.date)"
+					>
+						<text
+							class="day"
+							:class="{ selected: selected === c.date, today: c.date === today }"
+							>{{ c.day || "" }}</text
+						><view class="dots"
+							><view
+								v-for="d in dots(c.date)"
+								:key="d.t"
+								class="dot"
+								:class="{ ring: !d.done }"
+								:style="{ borderColor: COLORS[d.t], background: d.done ? COLORS[d.t] : 'transparent' }"
+						/></view></button
+				></view>
+				<view class="legend"
+					><view v-for="t in [0, 1, 2, 5, 3]" :key="t" class="m-row"
+						><view class="dot" :style="{ background: COLORS[t], borderColor: COLORS[t] }" /><text>{{
+							CARE_TYPE_NAMES[t]
+						}}</text></view
+					><view class="m-row"><view class="dot ring" /><text>计划</text></view></view
+				></view
+			>
+			<view v-if="filterPlant" class="m-between filter"
+				><text class="m-sub">只看「{{ filterPlant.name }}」</text
+				><button class="m-plain m-link" @tap="clearFilter">查看全部 ›</button></view
+			>
+			<view class="m-heading m-section">{{ selectedLabel }}的养护</view>
+			<view v-if="loading" class="m-note">正在加载…</view>
+			<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+			<template v-else
+				><view v-for="p in dayPlans" :key="'p' + p.plantId + '-' + p.type" class="m-card m-row task"
+					><image class="task-photo m-photo" :src="photo(p)" mode="aspectFill" /><view class="m-grow"
+						><view class="m-name">{{ p.plantName }}{{ p.speciesName ? " · " + p.speciesName : "" }}</view
+						><view class="m-row type"
+							><MIcon :name="p.type === 0 ? 'water' : 'leaf'" :color="p.type === 0 ? 'green' : 'amber'" :size="16" /><text
+								>{{ CARE_TYPE_NAMES[p.type] }}</text
+							><text v-if="p.overdueDays" class="m-red">已超期 {{ p.overdueDays }} 天</text></view
+						></view
+					><button
+						v-if="p.date === today"
+						class="m-button small"
+						:disabled="!!busy || pending.includes(p.plantId)"
+						@tap="complete(p)"
+					>
+						完成</button
+					><text v-else class="m-sub">待完成</text></view
+				><view v-for="r in dayRecords" :key="'r' + r.id" class="m-card m-row task done"
+					><image class="task-photo m-photo" :src="r.photo || photo(r)" mode="aspectFill" /><view class="m-grow"
+						><view class="m-name">{{ r.plantName }}{{ r.speciesName ? " · " + r.speciesName : "" }}</view
+						><view class="m-row type"
+							><view class="dot" :style="{ background: COLORS[r.type], borderColor: COLORS[r.type] }" /><text
+								>{{ CARE_TYPE_NAMES[r.type] }}{{ r.milestone ? " · " + r.milestone : "" }}</text
+							></view
+						><view v-if="r.remark" class="m-sub">{{ r.remark }}</view></view
+					><text class="m-green">已完成</text></view
+				><view v-if="!dayPlans.length && !dayRecords.length" class="m-note">这一天没有养护安排</view></template
+			>
+			<view v-if="choosing" class="m-card"
+				><text class="m-label">为哪盆植物记录？</text
+				><view class="m-choices"
+					><button
+						v-for="p in visiblePlants.filter((x) => x.id > 0 && !x.status)"
+						:key="p.id"
+						class="m-choice"
+						@tap="addFor(p.id)"
+					>
+						{{ p.name }}
+					</button></view
+				><view v-if="!visiblePlants.some((x) => x.id > 0 && !x.status)" class="m-sub"
+					>还没有在养的植物</view
+				></view
+			>
+			<button class="m-button full" @tap="addTask">
+				<MIcon name="plus" color="white" :size="18" />记录养护
+			</button></template
+		>
+		<view v-if="undoMessage" class="m-undo"
+			><text>{{ undoMessage }}</text
+			><button class="m-plain" :disabled="!!pending.length" @tap="undoAndReload">撤销</button></view
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { careCalendar, addCare, CARE_TYPE_NAMES, type CareCalendar, type CalendarPlan } from "@/api/plant";
+import { useMaoyu, photo, open, login, dateKey } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const COLORS = ["#48aa7b", "#f0b429", "#b07a55", "#8b8ff0", "#9aa39d", "#f08a3c"];
+const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
+const { guest, visiblePlants, refresh, waterPlants, pending, undo, undoMessage } = useMaoyu(),
+	today = dateKey(),
+	month = ref(today.slice(0, 7)),
+	selected = ref(today),
+	plantId = ref(0),
+	data = ref<CareCalendar | null>(null),
+	loading = ref(false),
+	error = ref(""),
+	busy = ref(false),
+	choosing = ref(false);
+const filterPlant = computed(() =>
+	plantId.value ? visiblePlants.value.find((p) => p.id === plantId.value) : undefined
+);
+const monthLabel = computed(() => {
+	const [y, m] = month.value.split("-");
+	return `${y}年${Number(m)}月`;
+});
+const selectedLabel = computed(() => {
+	if (selected.value === today) return "今天";
+	const [, m, d] = selected.value.split("-");
+	return `${Number(m)}月${Number(d)}日`;
+});
+const cells = computed(() => {
+	const [y, m] = month.value.split("-").map(Number);
+	const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+	const count = new Date(y, m, 0).getDate();
+	const list = Array.from({ length: offset }, (_, i) => ({ key: "e" + i, day: 0, date: "" }));
+	for (let d = 1; d <= count; d++) {
+		const date = `${month.value}-${String(d).padStart(2, "0")}`;
+		list.push({ key: date, day: d, date });
+	}
+	return list;
+});
+function dots(date: string) {
+	const d = date ? data.value?.days[date] : undefined;
+	if (!d) return [];
+	return [...new Set([...d.done, ...d.todo])].slice(0, 4).map((t) => ({ t, done: !d.todo.includes(t) }));
+}
+const dayPlans = computed(() => data.value?.plans.filter((p) => p.date === selected.value) || []);
+const dayRecords = computed(
+	() => data.value?.records.filter((r) => r.occurDate === selected.value && r.type !== 4) || []
+);
+async function load() {
+	if (guest.value) return;
+	loading.value = true;
+	error.value = "";
+	try {
+		data.value = await careCalendar(month.value, plantId.value || undefined);
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+function shift(n: number) {
+	const [y, m] = month.value.split("-").map(Number);
+	const d = new Date(y, m - 1 + n, 1);
+	month.value = dateKey(d).slice(0, 7);
+	selected.value = month.value === today.slice(0, 7) ? today : `${month.value}-01`;
+	load();
+}
+function clearFilter() {
+	plantId.value = 0;
+	load();
+}
+async function complete(p: CalendarPlan) {
+	if (busy.value) return;
+	busy.value = true;
+	try {
+		if (p.type === 0) {
+			const plant = visiblePlants.value.find((x) => x.id === p.plantId);
+			if (plant) await waterPlants([plant]);
+		} else {
+			await addCare({ plantId: p.plantId, type: 1 });
+			uni.showToast({ title: "已记录施肥" });
+		}
+		await load();
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		busy.value = false;
+	}
+}
+async function undoAndReload() {
+	await undo();
+	await load();
+}
+function addFor(id: number) {
+	choosing.value = false;
+	open("plant-care-form", "plantId=" + id + "&type=1");
+}
+function addTask() {
+	if (plantId.value) addFor(plantId.value);
+	else choosing.value = !choosing.value;
+}
+onLoad((opts) => (plantId.value = Number(opts?.plantId || 0)));
+onShow(async () => {
+	await refresh();
+	await load();
+});
+</script>
+<style scoped>
+.month {
+	font-size: 18px;
+	font-weight: 650;
+}
+.nav {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: #f3f1ec;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	row-gap: 6px;
+	margin-top: 12px;
+}
+.weekday {
+	text-align: center;
+	font-size: 12px;
+	color: #88918a;
+	padding-bottom: 4px;
+}
+.cell {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 2px 0;
+	min-height: 44px;
+}
+.day {
+	width: 32px;
+	height: 32px;
+	line-height: 32px;
+	text-align: center;
+	border-radius: 50%;
+	font-size: 14px;
+}
+.day.today {
+	color: #329e6b;
+	font-weight: 650;
+}
+.day.selected {
+	background: #48aa7b;
+	color: #fff;
+}
+.dots {
+	display: flex;
+	flex-direction: row;
+	gap: 3px;
+	height: 8px;
+	margin-top: 2px;
+}
+.dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	border: 1px solid #9aa39d;
+	box-sizing: border-box;
+}
+.dot.ring {
+	background: transparent;
+}
+.legend {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 12px;
+	border-top: 1px solid #edf0ea;
+	margin-top: 10px;
+	padding-top: 10px;
+	font-size: 12px;
+	color: #66706a;
+}
+.legend .m-row {
+	gap: 4px;
+}
+.filter {
+	margin: 4px 4px 0;
+}
+.task {
+	gap: 12px;
+}
+.task-photo {
+	width: 64px;
+	height: 64px;
+	flex-shrink: 0;
+}
+.type {
+	gap: 6px;
+	font-size: 13px;
+	margin-top: 4px;
+}
+.done {
+	opacity: 0.85;
+}
+</style>

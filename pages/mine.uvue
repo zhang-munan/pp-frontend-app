@@ -3,7 +3,7 @@
 		<view class="m-card profile-card"
 			><button
 				class="m-row m-plain profile-top"
-				@tap="guest ? login() : open('account-settings')"
+				@tap="guest ? login() : open('profile')"
 			>
 				<image
 					class="m-avatar"
@@ -19,22 +19,23 @@
 				><view
 					><text class="m-sub">陪伴</text
 					><view
-						><text class="stat">{{ guest ? "—" : companionDays }}</text
+						><text class="stat">{{ guest || !info ? "—" : info.companionDays }}</text
 						><text class="stat-unit"> 天</text></view
 					></view
 				><view
 					><text class="m-sub">小伙伴</text
-					><view class="stat">{{ guest ? "—" : pets.length + plants.length }}</view></view
+					><view class="stat">{{ guest ? "—" : info ? info.petCount + info.plantCount : pets.length + plants.length }}</view></view
 				><view
-					><text class="m-sub">打卡</text
-					><view class="stat">{{ guest ? "—" : (checkins ?? "—") }}</view></view
+					><text class="m-sub">记录</text
+					><view class="stat">{{ guest || !info ? "—" : info.recordCount }}</view></view
 				></view
 			></view
 		>
-		<button class="plus-card m-plain" @tap="open('membership')">
+		<button class="plus-card m-plain" @tap="guest ? login() : open('membership')">
 			<MIcon name="crown" color="amber" :size="38" /><view class="m-grow"
 				><view class="m-name">毛与叶 <text class="plus-word">Plus</text></view
-				><view class="plus-sub">让陪伴多一点从容</view></view
+				><view class="plus-sub">{{ plusText }}</view></view
+			><text v-if="member?.isPlus" class="plus-badge">已开通</text
 			><MIcon name="chevron" color="muted" :size="20" />
 		</button>
 		<view class="m-card menu"
@@ -69,42 +70,42 @@ import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
 import MTabbar from "@/components/MTabbar.uvue";
-import { healthList } from "@/api/pet";
-import { careTimeline } from "@/api/plant";
-import { useMaoyu, asset, open, login, daysFromToday } from "@/composables/maoyu";
+import { stats, type CareStats } from "@/api/care";
+import { memberStatus, type MemberStatus } from "@/api/order";
+import { currentTheme, setTheme } from "@/utils/theme";
+import { useMaoyu, asset, open, login } from "@/composables/maoyu";
 const { guest, user, pets, plants, refresh } = useMaoyu(),
-	checkins = ref<number | null>(null);
-const companionDays = computed(() => {
-	const dates = [...pets.value, ...plants.value]
-		.map((p) => p.arriveDate)
-		.filter(Boolean)
-		.sort();
-	return dates.length ? Math.max(1, 1 - (daysFromToday(dates[0]) || 0)) : 0;
+	info = ref<CareStats | null>(null),
+	member = ref<MemberStatus | null>(null);
+const plusText = computed(() => {
+	const m = member.value;
+	if (!m?.isPlus) return "让陪伴多一点从容";
+	if (m.isLifetime) return "终身会员 · 感谢一路同行";
+	return m.expireTime ? `有效期至 ${m.expireTime.slice(0, 10)}` : "会员权益生效中";
 });
 const firstMenus = [
 	{ name: "我的档案", icon: "user", path: "archives" },
-	{ name: "家庭共享", icon: "group", path: "feature-info", query: "kind=family" },
+	{ name: "家庭共享", icon: "group", path: "family" },
 	{ name: "消息设置", icon: "bell", path: "account-settings", query: "section=notifications" },
-	{ name: "年度报告", icon: "file", path: "feature-info", query: "kind=annual" }
+	{ name: "年度报告", icon: "file", path: "annual-report" },
+	{ name: "皮肤与徽章", icon: "crown", path: "badges" }
 ];
 const secondMenus = [
-	{ name: "数据导出", icon: "chart", path: "feature-info", query: "kind=export" },
+	{ name: "数据导出", icon: "chart", path: "data-export" },
 	{ name: "帮助反馈", icon: "help", path: "help" },
 	{ name: "设置", icon: "settings", path: "account-settings" }
 ];
 onShow(async () => {
 	await refresh();
-	checkins.value = null;
-	if (guest.value) return;
-	try {
-		const lists = await Promise.all([
-			...pets.value.map((p) => healthList(p.id)),
-			...plants.value.map((p) => careTimeline(p.id))
-		]);
-		checkins.value = lists.reduce((n, l) => n + (l?.length || 0), 0);
-	} catch (e) {
-		checkins.value = null;
+	if (guest.value) {
+		info.value = null;
+		member.value = null;
+		return;
 	}
+	const [s, m] = await Promise.all([stats().catch(() => null), memberStatus().catch(() => null)]);
+	info.value = s;
+	member.value = m;
+	if (m && !m.isPlus && currentTheme() !== "leaf") setTheme("leaf");
 });
 </script>
 <style scoped>
@@ -172,6 +173,13 @@ onShow(async () => {
 .plus-sub {
 	font-size: 12px;
 	color: #b29459;
+}
+.plus-badge {
+	font-size: 11px;
+	color: #9a7413;
+	background: #fbe7b0;
+	border-radius: 10px;
+	padding: 2px 8px;
 }
 .menu {
 	padding: 0 16px;

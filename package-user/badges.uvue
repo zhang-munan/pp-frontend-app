@@ -1,0 +1,175 @@
+<template>
+	<MPage title="皮肤与徽章" back>
+		<view class="m-card theme-card"
+			><view class="m-grow"
+				><view class="m-heading">选择主题</view><view class="m-sub">为应用选择喜欢的主题色彩</view
+				><view class="m-row themes"
+					><button v-for="t in THEMES" :key="t.key" class="m-plain theme" @tap="picked = t.key">
+						<view class="swatch" :class="{ on: picked === t.key }" :style="{ background: t.color }" /><text>{{ t.name }}</text>
+					</button></view
+				></view
+			><view class="preview" :style="{ borderColor: color }"
+				><view class="preview-top" :style="{ background: color }" /><view class="preview-row"
+					><view class="dot" :style="{ background: color }" /><view class="line"
+				/></view
+				><view class="preview-row"><view class="dot" /><view class="line" /></view></view
+		></view>
+		<view class="m-card"
+			><view class="m-between"
+				><text class="m-heading">我的徽章</text><text class="m-sub">已获得 {{ info?.earned || 0 }}/{{ info?.list.length || 0 }}</text></view
+			><view class="m-sub">记录你在陪伴旅程中的成长</view
+			><view v-if="!info" class="m-note">正在加载…</view
+			><view class="badge-grid"
+				><view v-for="b in info?.list || []" :key="b.key" class="badge" :class="{ earned: b.earned && isPlus }"
+					><view class="badge-icon"
+						><MIcon :name="ICONS[b.key] || 'leaf'" :color="b.earned && isPlus ? 'green' : 'muted'" :size="30"
+					/></view
+					><view class="m-name">{{ b.name }}</view
+					><text v-if="b.earned && isPlus" class="got">已获得</text
+					><template v-else
+						><view class="progress"><view class="progress-bar" :style="{ width: (b.progress / b.target) * 100 + '%' }" /></view
+						><text class="m-sub">{{ b.progress }}/{{ b.target }}</text></template
+					></view
+				></view
+			><view v-if="info && !isPlus" class="m-sub plus-tip">专属徽章与皮肤为 Plus 会员权益，开通后即可点亮与佩戴</view></view
+		>
+		<button class="m-button full" @tap="apply">{{ isPlus ? "应用主题" : "开通 Plus 解锁" }}</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { badges, type Badge } from "@/api/care";
+import { open, requireLogin } from "@/composables/maoyu";
+import { THEMES, currentTheme, setTheme } from "@/utils/theme";
+const ICONS: Record<string, string> = { care: "leaf", water: "water", year: "calendar", health: "vaccine", album: "camera" };
+const info = ref<{ isPlus: boolean; earned: number; list: Badge[] } | null>(null),
+	picked = ref(currentTheme());
+const isPlus = computed(() => !!info.value?.isPlus);
+const color = computed(() => THEMES.find((t) => t.key === picked.value)?.color || THEMES[0].color);
+function apply() {
+	if (!isPlus.value) return open("membership");
+	setTheme(picked.value);
+	uni.showToast({ title: "主题已应用" });
+	setTimeout(() => uni.reLaunch({ url: "/pages/mine" }), 600);
+}
+onShow(async () => {
+	if (!requireLogin()) return;
+	info.value = await badges().catch(() => null);
+});
+</script>
+<style scoped>
+.theme-card {
+	display: flex;
+	flex-direction: row;
+	gap: 12px;
+}
+.themes {
+	gap: 14px;
+	margin-top: 16px;
+}
+.theme {
+	flex-direction: column;
+	gap: 6px;
+	font-size: 12px;
+}
+.swatch {
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	border: 3px solid #fff;
+	box-shadow: 0 0 0 1px #e3e6e1;
+}
+.swatch.on {
+	box-shadow: 0 0 0 2px #48aa7b;
+}
+.preview {
+	width: 96px;
+	border: 2px solid;
+	border-radius: 14px;
+	overflow: hidden;
+	background: #f6faf6;
+	padding-bottom: 10px;
+}
+.preview-top {
+	height: 56px;
+	opacity: 0.85;
+	margin-bottom: 10px;
+}
+.preview-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+}
+.dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #d8ddd8;
+}
+.line {
+	flex: 1;
+	height: 6px;
+	border-radius: 3px;
+	background: #e3e7e2;
+}
+.badge-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+	margin-top: 14px;
+}
+.badge {
+	border: 1px solid #eceee9;
+	border-radius: 12px;
+	padding: 12px 8px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	text-align: center;
+}
+.badge.earned {
+	background: #eef8f1;
+	border-color: #cfe9d8;
+}
+.badge .m-name {
+	font-size: 14px;
+}
+.badge-icon {
+	width: 54px;
+	height: 54px;
+	border-radius: 14px;
+	background: #f1f3f0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.badge.earned .badge-icon {
+	background: #d9f0e1;
+}
+.got {
+	font-size: 11px;
+	color: #2f8f5b;
+	background: #dff1e6;
+	border-radius: 10px;
+	padding: 2px 10px;
+}
+.progress {
+	width: 100%;
+	height: 6px;
+	border-radius: 3px;
+	background: #eceee9;
+	overflow: hidden;
+}
+.progress-bar {
+	height: 100%;
+	background: #48aa7b;
+}
+.plus-tip {
+	margin-top: 12px;
+}
+</style>

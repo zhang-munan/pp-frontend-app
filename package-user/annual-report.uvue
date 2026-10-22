@@ -1,0 +1,493 @@
+<template>
+	<MPage :title="step === 0 ? '年度报告' : step === 1 ? '这一年的小事' : '分享预览'" back>
+		<view v-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<view v-else-if="!report" class="m-note">正在整理这一年的回忆…</view>
+		<template v-else-if="step === 0"
+			><view class="m-choices years"
+				><button v-for="y in years" :key="y" class="m-choice m-plain" :class="{ selected: y === year }" @tap="switchYear(y)">
+					{{ y }}
+				</button></view
+			><view class="year">{{ report.year }}</view
+			><view class="headline">好好陪伴的一年</view
+			><view class="m-sub companions">{{ report.companions }}</view
+			><view class="range">统计至 {{ rangeEnd }}</view
+			><view class="collage"
+				><view v-if="report.covers[0]" class="polaroid main"
+					><image :src="coverImage(report.covers[0])" mode="aspectFill" /><text>{{ report.covers[0].name }}</text></view
+				><view class="side"
+					><view v-for="c in report.covers.slice(1, 3)" :key="c.kind + c.id" class="polaroid"
+						><image :src="coverImage(c)" mode="aspectFill" /><text>{{ c.name }}</text></view
+					></view
+				></view
+			><view class="stats"
+				><view v-for="s in basicStats" :key="s.name" class="stat"
+					><MIcon :name="s.icon" :size="24" /><text class="m-sub">{{ s.name }}</text
+					><view><text class="stat-num">{{ s.value }}</text><text class="m-sub"> {{ s.unit }}</text></view></view
+				></view
+			><button class="m-button full" @tap="step = 1">开启年度回忆 →</button></template
+		>
+		<template v-else-if="step === 1"
+			><view class="m-sub">{{ report.year }}年度回忆</view
+			><view class="stats"
+				><view v-for="s in basicStats" :key="s.name" class="stat"
+					><MIcon :name="s.icon" :size="24" /><view><text class="stat-num">{{ s.value }}</text><text class="m-sub"> {{ s.unit }}</text></view
+					><text class="m-sub">{{ s.name }}</text></view
+				></view
+			><template v-if="report.full"
+				><view class="stats four"
+					><view v-for="s in fullStats" :key="s.name" class="stat small"
+						><text class="stat-num">{{ s.value }}</text><text class="m-sub">{{ s.name }}</text></view
+					></view
+				><view v-for="w in report.weights" :key="w.petId" class="m-card"
+					><view class="m-name">{{ w.name }}的体重变化</view
+					><view class="m-row weight"
+						><text class="weight-num">{{ w.from }} → {{ w.to }}</text><text class="m-sub">kg</text
+						><view class="spark"
+							><view v-for="(p, i) in w.points.slice(-8)" :key="i" class="bar" :style="{ height: barHeight(w, p.value) }"
+						/></view></view
+				></view
+				><view class="m-card"
+					><view class="m-name">每月照顾次数</view
+					><view class="months"
+						><view v-for="(n, i) in report.months" :key="i" class="month"
+							><view class="month-bar" :style="{ height: monthHeight(n) }" /><text>{{ i + 1 }}</text></view
+						></view
+					><view v-if="report.busiestMonth" class="m-sub">{{ report.busiestMonth }} 月是最用心的一个月</view></view
+				><view v-if="report.photos?.length" class="photos"
+					><image v-for="p in report.photos.slice(0, 6)" :key="p.url" :src="p.url" mode="aspectFill" @tap="previewPhotos(p.url)"
+				/></view
+				><view v-if="report.badges?.length" class="m-card"
+					><view class="m-between"
+						><text class="m-name">我的徽章</text
+						><button class="m-plain m-link" @tap="open('badges')">皮肤与徽章 ›</button></view
+					><view class="m-row badge-row"
+						><view v-for="b in report.badges" :key="b.key" class="badge" :class="{ earned: b.earned }"
+							><MIcon :name="b.earned ? 'crown' : 'leaf'" :color="b.earned ? 'amber' : 'muted'" :size="22" /><text>{{ b.name }}</text></view
+						></view
+					></view
+				></template
+			><view v-else class="m-card locked"
+				><MIcon name="crown" color="amber" :size="32" /><view class="m-name">完整版年度报告为 Plus 专属</view
+				><view class="m-sub">体重变化、每月照顾分布、年度照片墙与专属徽章，开通 Plus 后即可查看</view
+				><button class="m-button full" @tap="open('membership')">了解 Plus</button></view
+			><view class="m-sub slogan">每一个小伙伴，都被好好照顾着。</view
+			><button class="m-button full" @tap="toPoster">{{ report.full ? "生成分享海报" : "开通 Plus 生成海报" }}</button></template
+		>
+		<template v-else
+			><view class="poster-wrap"
+				><image v-if="posterPath" class="poster" :src="posterPath" mode="widthFix" /><view v-else class="m-note"
+					>{{ drawing ? "正在绘制海报…" : "海报绘制失败，请重试" }}</view
+				></view
+			><view class="m-row actions"
+				><button class="m-button m-grow" :disabled="!posterPath" @tap="savePoster">保存海报</button
+				><!-- #ifdef MP-WEIXIN --><button class="m-button outline m-grow" open-type="share">分享给朋友</button
+				><!-- #endif --></view
+			></template
+		>
+		<canvas id="poster" type="2d" class="offscreen" :style="{ width: W + 'px', height: H + 'px' }" />
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { annualReport, type AnnualReport } from "@/api/care";
+import { photo, open, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const W = 345,
+	H = 600;
+const thisYear = new Date().getFullYear();
+const years = [thisYear, thisYear - 1];
+const year = ref(thisYear),
+	report = ref<AnnualReport | null>(null),
+	error = ref(""),
+	step = ref(0),
+	posterPath = ref(""),
+	drawing = ref(false);
+const rangeEnd = computed(() => {
+	const d = report.value?.range.end || "";
+	return d ? `${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日` : "";
+});
+const basicStats = computed(() => {
+	const r = report.value!;
+	return [
+		{ name: "陪伴", value: r.companionDays, unit: "天", icon: "paw" },
+		{ name: "浇水", value: r.water, unit: "次", icon: "water" },
+		{ name: "驱虫", value: r.deworm, unit: "次", icon: "medical" }
+	];
+});
+const fullStats = computed(() => {
+	const r = report.value!;
+	return [
+		{ name: "疫苗", value: r.vaccine },
+		{ name: "就医", value: r.visit || 0 },
+		{ name: "施肥", value: r.fertilize || 0 },
+		{ name: "照片", value: r.photoCount || 0 }
+	];
+});
+function coverImage(c: AnnualReport["covers"][number]) {
+	return photo(c, c.kind === "pet" ? "pet" : "plant");
+}
+function barHeight(w: { points: { value: number }[] }, v: number) {
+	const vs = w.points.map((p) => p.value),
+		min = Math.min(...vs),
+		max = Math.max(...vs);
+	return (max === min ? 50 : 20 + ((v - min) / (max - min)) * 80) + "%";
+}
+function monthHeight(n: number) {
+	const max = Math.max(1, ...(report.value?.months || [0]));
+	return Math.max(4, Math.round((n / max) * 60)) + "px";
+}
+function previewPhotos(current: string) {
+	uni.previewImage({ urls: (report.value?.photos || []).map((p) => p.url), current });
+}
+async function load() {
+	error.value = "";
+	report.value = null;
+	try {
+		report.value = await annualReport(year.value);
+	} catch (e) {
+		error.value = errorMessage(e, "加载失败，请重试");
+	}
+}
+function switchYear(y: number) {
+	if (y === year.value) return;
+	year.value = y;
+	load();
+}
+function toPromise<T>(fn: (opts: any) => void, opts: any): Promise<T> {
+	return new Promise((resolve, reject) => fn({ ...opts, success: resolve, fail: reject }));
+}
+function queryCanvas(): Promise<any> {
+	return new Promise((resolve, reject) => {
+		uni.createSelectorQuery()
+			.select("#poster")
+			.fields({ node: true, size: true }, () => {})
+			.exec((res: any) => (res?.[0]?.node ? resolve(res[0].node) : reject(new Error("画布未就绪"))));
+	});
+}
+async function loadImage(canvas: any, src?: string): Promise<any> {
+	if (!src) return null;
+	try {
+		const info = await toPromise<{ path: string }>(uni.getImageInfo, { src });
+		return await new Promise((resolve) => {
+			const img = canvas.createImage();
+			img.onload = () => resolve(img);
+			img.onerror = () => resolve(null);
+			img.src = info.path;
+		});
+	} catch (e) {
+		return null;
+	}
+}
+function cover(ctx: any, img: any, x: number, y: number, w: number, h: number) {
+	ctx.save();
+	ctx.beginPath();
+	ctx.rect(x, y, w, h);
+	ctx.clip();
+	if (img) {
+		const scale = Math.max(w / img.width, h / img.height),
+			sw = w / scale,
+			sh = h / scale;
+		ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+	} else {
+		ctx.fillStyle = "#e7efe6";
+		ctx.fillRect(x, y, w, h);
+	}
+	ctx.restore();
+}
+async function drawPoster() {
+	const r = report.value!;
+	const canvas = await queryCanvas();
+	const dpr = uni.getSystemInfoSync().pixelRatio || 2;
+	canvas.width = W * dpr;
+	canvas.height = H * dpr;
+	const ctx = canvas.getContext("2d");
+	ctx.scale(dpr, dpr);
+	ctx.fillStyle = "#fbf8f3";
+	ctx.fillRect(0, 0, W, H);
+	ctx.fillStyle = "#1f2a24";
+	ctx.font = "bold 26px sans-serif";
+	ctx.fillText(`毛与叶 · ${r.year}`, 20, 48);
+	ctx.fillStyle = "#5b635e";
+	ctx.font = "15px sans-serif";
+	ctx.fillText(`${r.companionDays}天的温柔陪伴`, 20, 74);
+	const imgs = await Promise.all(r.covers.slice(0, 3).map((c) => loadImage(canvas, coverImage(c))));
+	cover(ctx, imgs[0], 20, 92, 180, 300);
+	cover(ctx, imgs[1] || imgs[0], 206, 92, 119, 147);
+	cover(ctx, imgs[2] || imgs[1] || imgs[0], 206, 245, 119, 147);
+	const stats = basicStats.value;
+	ctx.textAlign = "center";
+	stats.forEach((s, i) => {
+		const x = 20 + (W - 40) / 6 + (i * (W - 40)) / 3;
+		ctx.fillStyle = "#88918a";
+		ctx.font = "13px sans-serif";
+		ctx.fillText(s.name, x, 428);
+		ctx.fillStyle = "#2f8f5b";
+		ctx.font = "bold 28px sans-serif";
+		ctx.fillText(String(s.value), x - 8, 464);
+		ctx.fillStyle = "#5b635e";
+		ctx.font = "12px sans-serif";
+		ctx.fillText(s.unit, x + 22, 464);
+	});
+	ctx.strokeStyle = "#ebe7df";
+	ctx.beginPath();
+	ctx.moveTo(20, 488);
+	ctx.lineTo(W - 20, 488);
+	ctx.stroke();
+	ctx.textAlign = "left";
+	ctx.fillStyle = "#5b635e";
+	ctx.font = "13px sans-serif";
+	ctx.fillText(r.companions.replace(/^和|一起走过。$/g, "").replace(/、/g, " · "), 20, 514);
+	if (r.busiestMonth) ctx.fillText(`${r.busiestMonth} 月是最用心的一个月`, 20, 538);
+	ctx.fillStyle = "#88918a";
+	ctx.font = "11px sans-serif";
+	ctx.textAlign = "center";
+	ctx.fillText("毛与叶 · 让每一份陪伴，都被好好照顾", W / 2, H - 20);
+	ctx.textAlign = "left";
+	const out = await toPromise<{ tempFilePath: string }>(uni.canvasToTempFilePath, { canvas, fileType: "png" });
+	return out.tempFilePath;
+}
+async function toPoster() {
+	if (!report.value?.full) return open("membership");
+	step.value = 2;
+	drawing.value = true;
+	posterPath.value = "";
+	try {
+		posterPath.value = await drawPoster();
+	} catch (e) {
+		posterPath.value = "";
+	} finally {
+		drawing.value = false;
+	}
+}
+async function savePoster() {
+	if (!posterPath.value) return;
+	try {
+		await toPromise(uni.saveImageToPhotosAlbum, { filePath: posterPath.value });
+		uni.showToast({ title: "已保存到相册" });
+	} catch (e: any) {
+		if (/auth|deny|authorize/i.test(e?.errMsg || "")) {
+			uni.showModal({
+				title: "需要相册权限",
+				content: "请在设置中允许保存到相册",
+				confirmText: "去设置",
+				success: (res) => res.confirm && uni.openSetting({})
+			});
+		}
+	}
+}
+onShareAppMessage(() => ({
+	title: `我的 ${report.value?.year || thisYear} 年度陪伴报告：${report.value?.companionDays || 0} 天的温柔陪伴`,
+	path: "/pages/index",
+	imageUrl: posterPath.value || ""
+}));
+onLoad((o) => {
+	const y = Number(o?.year);
+	if (years.includes(y)) year.value = y;
+});
+onShow(() => {
+	if (requireLogin() && !report.value) load();
+});
+</script>
+<style scoped>
+.years {
+	margin: 4px 0 10px;
+}
+.year {
+	font-size: 46px;
+	font-weight: 800;
+	color: #1f6b47;
+	line-height: 1.1;
+}
+.headline {
+	font-size: 24px;
+	font-weight: 700;
+	color: #1f2a24;
+	margin: 4px 0 6px;
+}
+.companions {
+	font-size: 15px;
+}
+.range {
+	display: inline-block;
+	font-size: 11px;
+	color: #9a7a4a;
+	background: #f6ecda;
+	border-radius: 6px;
+	padding: 3px 8px;
+	margin: 10px 0 14px;
+}
+.collage {
+	display: flex;
+	flex-direction: row;
+	gap: 10px;
+	margin-bottom: 14px;
+}
+.polaroid {
+	background: #fff;
+	padding: 6px 6px 4px;
+	border-radius: 6px;
+	box-shadow: 0 4px 14px rgba(60, 60, 40, 0.12);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: #55605a;
+}
+.polaroid.main {
+	flex: 1.3;
+	transform: rotate(-2deg);
+}
+.polaroid.main image {
+	width: 100%;
+	height: 220px;
+}
+.side {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.side .polaroid image {
+	width: 100%;
+	height: 92px;
+}
+.stats {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+	margin: 12px 0;
+}
+.stats.four {
+	grid-template-columns: repeat(4, 1fr);
+}
+.stat {
+	background: #fff;
+	border-radius: 14px;
+	padding: 14px 6px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+}
+.stat.small {
+	padding: 10px 4px;
+}
+.stat-num {
+	font-size: 26px;
+	font-weight: 800;
+	color: #2f8f5b;
+}
+.stat.small .stat-num {
+	font-size: 20px;
+}
+.weight {
+	gap: 6px;
+	align-items: flex-end;
+	margin-top: 8px;
+}
+.weight-num {
+	font-size: 22px;
+	font-weight: 700;
+	color: #2f8f5b;
+}
+.spark {
+	flex: 1;
+	height: 44px;
+	display: flex;
+	flex-direction: row;
+	align-items: flex-end;
+	gap: 4px;
+	margin-left: 12px;
+}
+.bar {
+	flex: 1;
+	background: #bfe3cd;
+	border-radius: 3px 3px 0 0;
+}
+.months {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-end;
+	gap: 4px;
+	height: 80px;
+	margin: 10px 0 6px;
+}
+.month {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 3px;
+	font-size: 10px;
+	color: #88918a;
+}
+.month-bar {
+	width: 100%;
+	background: #48aa7b;
+	border-radius: 3px 3px 0 0;
+}
+.photos {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 6px;
+	margin-bottom: 12px;
+}
+.photos image {
+	width: 100%;
+	height: 100px;
+	border-radius: 8px;
+}
+.badge-row {
+	gap: 8px;
+	margin-top: 10px;
+	flex-wrap: wrap;
+}
+.badge {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	color: #9aa19c;
+	width: 56px;
+}
+.badge.earned {
+	color: #9a7413;
+}
+.locked {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: 8px;
+	padding: 20px 16px;
+}
+.slogan {
+	text-align: center;
+	margin: 14px 0;
+}
+.poster-wrap {
+	background: #fff;
+	border-radius: 16px;
+	padding: 10px;
+	min-height: 300px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.poster {
+	width: 100%;
+}
+.actions {
+	gap: 12px;
+	margin-top: 16px;
+}
+.offscreen {
+	position: fixed;
+	left: -9999px;
+	top: 0;
+}
+</style>

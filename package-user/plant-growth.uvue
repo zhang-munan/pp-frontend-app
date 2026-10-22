@@ -1,0 +1,178 @@
+<template>
+	<MPage :title="(growth?.plant.name || plant?.name || '植物') + '的成长'" back>
+		<view v-if="plantId < 0" class="m-card m-empty"
+			><MIcon name="leaf" :size="40" /><view class="m-name">示例植物</view
+			><view class="m-sub">登录并添加自己的植物后，就能记录它的每一次生长</view
+			><button class="m-button full" @tap="login">去登录</button></view
+		>
+		<view v-else-if="loading && !growth" class="m-note">正在加载…</view>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<template v-else-if="growth"
+			><view class="m-card hero"
+				><image class="hero-photo" :src="growth.photos[0]?.photo || photo(growth.plant)" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="m-heading"
+						>{{ growth.plant.name }}{{ growth.plant.speciesName ? " · " + growth.plant.speciesName : "" }}</view
+					><view class="m-sub summary">{{ growth.summary }}</view
+					><view class="m-sub">{{
+						growth.photos.length
+							? `已记录 ${growth.photos.length} 张成长照片`
+							: "还没有成长照片，拍下第一张吧"
+					}}</view
+					><button
+						class="m-button soft small compare"
+						:disabled="growth.photos.length < 2"
+						@tap="open('plant-compare', 'plantId=' + plantId)"
+					>
+						照片对比 ›
+					</button></view
+				></view
+			>
+			<view v-for="(r, i) in growth.records" :key="r.id" class="m-row item" @longpress="remove(r)"
+				><view class="rail"><view class="node" /><view v-if="i < growth.records.length - 1" class="line" /></view
+				><view class="m-card m-row m-grow record"
+					><view class="m-grow"
+						><view class="m-sub">{{ dayLabel(r.occurDate) }}</view
+						><view class="m-name">{{ titleOf(r, i) }}</view
+						><view v-if="r.height" class="m-green height">植株高度 {{ r.height }} cm</view
+						><view class="m-sub">{{ r.remark || "记下这一刻的样子" }}</view></view
+					><image v-if="r.photo" class="record-photo" :src="r.photo" mode="aspectFill" @tap.stop="preview(r.photo)" /></view
+			></view>
+			<view v-if="readonly" class="m-note">家人共享 · 只读查看，修改请联系主人</view>
+			<view v-else-if="growth.records.length" class="m-note">长按记录可删除</view>
+			<view v-if="!growth.records.length" class="m-card m-empty">每一片新叶都值得被记录</view></template
+		>
+		<button v-if="plantId > 0 && !readonly" class="m-button full" @tap="open('plant-care-form', 'plantId=' + plantId + '&type=3')">
+			<MIcon name="camera" color="white" :size="20" />拍照记录
+		</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { plantGrowth, removeCare, CARE_TYPE_NAMES, type PlantGrowth, type PlantCare } from "@/api/plant";
+import { useMaoyu, photo, open, login, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const MILESTONE_TITLES: Record<string, string> = {
+	新叶: "新叶展开",
+	开花: "开花啦",
+	长高: "又长高了",
+	换盆: "换了新花盆",
+	结果: "结果啦"
+};
+const { visiblePlants, refresh } = useMaoyu(),
+	plantId = ref(0),
+	growth = ref<PlantGrowth | null>(null),
+	loading = ref(false),
+	error = ref(""),
+	readonly = ref(false);
+const plant = computed(() => visiblePlants.value.find((p) => p.id === plantId.value));
+function dayLabel(date: string) {
+	const [y, m, d] = date.split("-");
+	return `${y}年${Number(m)}月${Number(d)}日`;
+}
+function titleOf(r: PlantCare, i: number) {
+	if (r.milestone) return MILESTONE_TITLES[r.milestone] || r.milestone;
+	if (i === (growth.value?.records.length || 0) - 1 && r.occurDate === growth.value?.plant.arriveDate) return "第一天";
+	return r.type === 3 ? "成长记录" : CARE_TYPE_NAMES[r.type];
+}
+function preview(url: string) {
+	const urls = (growth.value?.photos || []).map((p) => p.photo!).filter(Boolean);
+	uni.previewImage({ urls, current: url });
+}
+async function load() {
+	if (plantId.value <= 0) return;
+	loading.value = true;
+	error.value = "";
+	try {
+		growth.value = await plantGrowth(plantId.value);
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+function remove(r: PlantCare) {
+	if (readonly.value || !requireLogin()) return;
+	uni.showModal({
+		title: "删除这条记录？",
+		content: "删除后无法恢复",
+		confirmColor: "#d9534f",
+		success: async (res) => {
+			if (!res.confirm) return;
+			try {
+				await removeCare(r.id);
+				await load();
+			} catch (e) {
+				/* The request layer reports the error. */
+			}
+		}
+	});
+}
+onLoad((opts) => {
+	plantId.value = Number(opts?.plantId || opts?.id || 0);
+	readonly.value = opts?.readonly === "1";
+});
+onShow(async () => {
+	await refresh();
+	await load();
+});
+</script>
+<style scoped>
+.hero {
+	display: flex;
+	flex-direction: row;
+	gap: 14px;
+	padding: 10px;
+}
+.hero-photo {
+	width: 52%;
+	height: 220px;
+	border-radius: 14px;
+	flex-shrink: 0;
+}
+.summary {
+	margin: 8px 0;
+	color: #33453a;
+	line-height: 1.6;
+}
+.compare {
+	margin-top: 12px;
+}
+.item {
+	align-items: stretch;
+	gap: 8px;
+}
+.rail {
+	width: 14px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding-top: 22px;
+}
+.node {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #48aa7b;
+}
+.line {
+	flex: 1;
+	width: 2px;
+	background: #cfe8da;
+}
+.record {
+	gap: 10px;
+}
+.height {
+	font-size: 12px;
+	margin: 2px 0;
+}
+.record-photo {
+	width: 120px;
+	height: 90px;
+	border-radius: 10px;
+	flex-shrink: 0;
+}
+</style>

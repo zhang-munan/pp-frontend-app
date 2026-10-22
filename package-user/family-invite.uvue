@@ -1,0 +1,198 @@
+<template>
+	<MPage :title="manage ? '管理共享档案' : '邀请家人'" back>
+		<template v-if="!invite"
+			><view class="title">选择共享档案</view><view class="m-sub lead">选择你希望与家人共享的伙伴档案</view>
+			<view v-if="loading" class="m-note">正在加载…</view>
+			<view v-else-if="!items.length" class="m-card m-empty"
+				><view class="m-sub">还没有可以共享的档案，先添加一位小伙伴吧</view
+				><button class="m-button full" @tap="open('companion')">添加伙伴</button></view
+			>
+			<button v-for="it in items" :key="it.key" class="m-card m-plain m-row pick" @tap="toggle(it.key)">
+				<view class="check" :class="{ on: selected.includes(it.key) }"><MIcon v-if="selected.includes(it.key)" name="check" color="white" :size="14" /></view
+				><image class="pick-photo" :src="it.image" mode="aspectFill" /><view class="m-grow"
+					><view class="m-name">{{ it.name }}</view><view class="m-sub">{{ it.sub }}</view></view
+				>
+			</button>
+			<view class="m-card"
+				><view class="m-heading">共享权限</view><view class="perm">只读查看</view
+				><view class="m-sub">家人可查看，不能编辑或打卡。</view></view
+			>
+			<view v-if="!manage && previews.length" class="m-card"
+				><view class="m-heading">邀请预览</view
+				><view class="m-row preview"
+					><image v-for="p in previews" :key="p" class="preview-photo" :src="p" mode="aspectFill" /><text class="m-green slogan"
+						>一起关心我们的小伙伴</text
+					></view
+				></view
+			>
+			<button class="m-button full" :disabled="busy || !selected.length" @tap="submit">
+				{{ busy ? "处理中…" : manage ? "保存共享范围" : "生成邀请卡" }}
+			</button>
+			<button class="m-button outline full cancel" @tap="back">取消</button>
+			<view class="m-sub foot">可随时撤销邀请。</view></template
+		>
+		<template v-else
+			><view class="m-card invite-card"
+				><view class="m-heading">{{ ownerName }}邀请你一起关心小伙伴</view
+				><view class="m-row preview"
+					><image v-for="p in previews" :key="p" class="preview-photo" :src="p" mode="aspectFill"
+				/></view
+				><view class="m-sub">共享 {{ invite.pets }} 只宠物、{{ invite.plants }} 株植物 · 只读查看</view
+				><view class="m-sub">邀请有效期至 {{ invite.expireTime.slice(0, 16) }}，仅可被一位家人接受</view></view
+			>
+			<!-- #ifdef MP-WEIXIN -->
+			<button class="m-button full" open-type="share">发送给家人</button>
+			<!-- #endif -->
+			<!-- #ifndef MP-WEIXIN -->
+			<button class="m-button full" @tap="copyCode">复制邀请码</button>
+			<!-- #endif -->
+			<button class="m-button outline full cancel" @tap="back">完成</button></template
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { familyOverview, familyInvite, familyShare } from "@/api/family";
+import { useMaoyu, photo, open, requireLogin } from "@/composables/maoyu";
+const { user } = useMaoyu();
+const SPECIES = ["猫", "狗", "兔", "仓鼠", "鸟", "鱼", "爬宠", "其他"];
+const manage = ref(false),
+	loading = ref(true),
+	busy = ref(false),
+	items = ref<{ key: string; id: number; kind: string; name: string; sub: string; image: string }[]>([]),
+	selected = ref<string[]>([]),
+	invite = ref<{ code: string; expireTime: string; pets: number; plants: number } | null>(null);
+const ownerName = computed(() => user.info.value?.nickName || "家人");
+const previews = computed(() =>
+	items.value
+		.filter((i) => selected.value.includes(i.key))
+		.slice(0, 4)
+		.map((i) => i.image)
+);
+function toggle(key: string) {
+	selected.value = selected.value.includes(key) ? selected.value.filter((k) => k !== key) : [...selected.value, key];
+}
+function ids(kind: string) {
+	return items.value.filter((i) => i.kind === kind && selected.value.includes(i.key)).map((i) => i.id);
+}
+async function load() {
+	loading.value = true;
+	try {
+		const o = await familyOverview();
+		items.value = [
+			...o.pets.map((p) => ({ key: "p" + p.id, id: p.id, kind: "pet", name: p.name, sub: p.breed || SPECIES[p.species] || "", image: photo(p, "pet"), shared: p.shared })),
+			...o.plants.map((p) => ({ key: "l" + p.id, id: p.id, kind: "plant", name: p.name, sub: p.speciesName || "植物", image: photo(p), shared: p.shared }))
+		];
+		const shared = items.value.filter((i: any) => i.shared).map((i) => i.key);
+		selected.value = shared.length ? shared : items.value.map((i) => i.key);
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		loading.value = false;
+	}
+}
+async function submit() {
+	if (busy.value || !selected.value.length) return;
+	busy.value = true;
+	try {
+		if (manage.value) {
+			await familyShare(ids("pet"), ids("plant"));
+			uni.showToast({ title: "已保存共享范围" });
+			setTimeout(back, 600);
+		} else {
+			invite.value = await familyInvite(ids("pet"), ids("plant"));
+		}
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		busy.value = false;
+	}
+}
+function back() {
+	uni.navigateBack();
+}
+function copyCode() {
+	if (invite.value) uni.setClipboardData({ data: invite.value.code });
+}
+onShareAppMessage(() => ({
+	title: `${ownerName.value}邀请你一起关心小伙伴`,
+	path: `/package-user/family-join?code=${invite.value?.code || ""}`,
+	imageUrl: previews.value[0] || ""
+}));
+onLoad((o) => (manage.value = o?.mode === "manage"));
+onShow(() => {
+	if (!requireLogin()) return;
+	if (!items.value.length) load();
+});
+</script>
+<style scoped>
+.title {
+	font-size: 22px;
+	font-weight: 700;
+	margin-top: 6px;
+}
+.lead {
+	margin: 4px 0 12px;
+}
+.pick {
+	width: 100%;
+	gap: 12px;
+	text-align: left;
+	padding: 10px 14px;
+}
+.check {
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	border: 1.5px solid #9aa19c;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.check.on {
+	background: #48aa7b;
+	border-color: #48aa7b;
+}
+.pick-photo {
+	width: 64px;
+	height: 64px;
+	border-radius: 10px;
+}
+.perm {
+	background: #eef7f1;
+	border-radius: 10px;
+	padding: 10px 12px;
+	font-weight: 600;
+	margin: 10px 0 8px;
+}
+.preview {
+	gap: 10px;
+	margin: 10px 0;
+	flex-wrap: wrap;
+}
+.preview-photo {
+	width: 70px;
+	height: 70px;
+	border-radius: 10px;
+}
+.slogan {
+	font-size: 14px;
+	font-weight: 600;
+}
+.cancel {
+	margin-top: 10px;
+}
+.foot {
+	text-align: center;
+	margin: 10px 0 20px;
+}
+.invite-card {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 18px 16px;
+}
+</style>

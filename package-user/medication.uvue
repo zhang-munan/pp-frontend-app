@@ -1,0 +1,312 @@
+<template>
+	<MPage title="用药提醒" back>
+		<view v-if="pet" class="m-card m-row pet-head"
+			><image class="m-avatar" :src="photo(pet, 'pet')" mode="aspectFill" /><view
+				class="m-grow"
+				><view class="m-name">{{ pet.name }}</view
+				><view class="m-sub">{{ ageText(pet.birthday) || "陪你健康长大" }}</view></view
+			><text class="head-note">小小的守护\n也是大大的爱</text></view
+		>
+		<view class="m-card week"
+			><button class="m-plain week-arrow" @tap="shiftWeek(-7)">
+				<MIcon name="back" color="muted" :size="16" /></button
+			><button
+				v-for="d in week"
+				:key="d.date"
+				class="m-plain day"
+				:class="{ selected: d.date === date, today: d.date === todayKey }"
+				@tap="pick(d.date)"
+			>
+				<text class="day-week">{{ d.week }}</text><text class="day-num">{{ d.day }}</text>
+			</button>
+			<button class="m-plain week-arrow flip" @tap="shiftWeek(7)">
+				<MIcon name="back" color="muted" :size="16" />
+			</button>
+		</view>
+		<view v-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<view class="m-card"
+			><view class="m-between"
+				><text class="m-heading">{{ date === todayKey ? "今天的用药计划" : "当天的用药计划" }}</text
+				><text class="m-sub">{{ date }}（{{ weekName(date) }}）</text></view
+			><view v-if="loading" class="m-note">正在加载…</view
+			><view v-else-if="!day?.active.length" class="m-empty m-sub"
+				>这一天没有用药安排</view
+			><view v-for="plan in day?.active || []" :key="plan.id" class="plan"
+				><view class="plan-head m-row"
+					><MIcon name="pill" :size="26" /><view class="m-grow"
+						><view class="m-name"
+							>{{ plan.itemName
+							}}<text v-if="plan.dosage" class="dose-tag">{{ plan.dosage }}</text></view
+						><view class="m-sub">按兽医处方使用，请勿自行调整剂量。</view></view
+					><button class="m-plain m-link" @tap="edit(plan.id)">编辑</button></view
+				><view v-if="!plan.doses.length" class="m-note">未设置服用时间，不会到点提醒</view
+				><view v-for="d in plan.doses" :key="d.time" class="dose m-between"
+					><view class="m-row dose-time"
+						><text class="dose-icon">{{ icon(d.time) }}</text
+						><view
+							><view class="m-name">{{ period(d.time) }} {{ d.time }}</view
+							><view class="m-sub">{{ plan.dosage || "按处方剂量" }}</view></view
+						></view
+					><view class="dose-action"
+						><button
+							v-if="d.taken"
+							class="m-button small soft"
+							:disabled="busy === plan.id + d.time"
+							@tap="toggle(plan, d)"
+						>
+							✓ 已服用</button
+						><button
+							v-else
+							class="m-button small"
+							:disabled="date > todayKey || busy === plan.id + d.time"
+							@tap="toggle(plan, d)"
+						>
+							{{ date > todayKey ? "未到时间" : "已服用" }}</button
+						><text v-if="d.taken && d.takenAt" class="m-sub taken-at"
+							>{{ d.takenAt }} 记录</text
+						></view
+					></view
+				><view class="progress"
+					><view class="m-between"
+						><text class="m-sub">疗程进度</text
+						><text class="m-sub">还剩 {{ Math.max(0, plan.totalDays - plan.day) }} 天</text></view
+					><view class="progress-text"
+						>第 <text class="m-green">{{ plan.day }}</text> 天 / 共 {{ plan.totalDays }} 天</view
+					><view class="bar"
+						><view class="bar-fill" :style="{ width: (plan.day / plan.totalDays) * 100 + '%' }"
+					/></view></view
+			></view>
+		</view>
+		<view v-if="day?.upcoming.length" class="m-card"
+			><view class="m-heading">即将开始</view
+			><view v-for="h in day.upcoming" :key="h.id" class="history m-between" @tap="edit(h.id)"
+				><view
+					><view class="m-name">{{ h.itemName }}</view
+					><view class="m-sub">{{ h.occurDate }} 开始 · 共 {{ h.totalDays }} 天</view></view
+				><MIcon name="chevron" color="muted" :size="15"
+			/></view>
+		</view>
+		<view class="m-card"
+			><view class="m-heading">历史疗程</view
+			><view v-if="!day?.history.length" class="m-sub">还没有历史疗程</view
+			><view v-for="h in day?.history || []" :key="h.id" class="history m-between" @tap="edit(h.id)"
+				><view
+					><view class="m-name">{{ h.itemName }}</view
+					><view class="m-sub"
+						>{{ h.occurDate }}<text v-if="h.endDate && h.endDate !== h.occurDate">
+							~ {{ h.endDate }}</text
+						></view
+					><view class="m-sub">共 {{ h.totalDays }} 天</view></view
+				><text class="done-tag">已完成</text></view
+			>
+		</view>
+		<button class="m-button full" @tap="create">＋ 新增用药计划</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { medications, takeDose, type DosePlan, type MedicationDay } from "@/api/pet";
+import { useMaoyu, photo, open, ageText, dateKey, addDays, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const WEEK = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const { visiblePets, refresh, guest } = useMaoyu(),
+	petId = ref(0),
+	todayKey = dateKey(),
+	date = ref(dateKey()),
+	weekStart = ref(""),
+	day = ref<MedicationDay | null>(null),
+	loading = ref(false),
+	error = ref(""),
+	busy = ref("");
+const pet = computed(() => visiblePets.value.find((p) => p.id === petId.value));
+function weekday(d: string) {
+	return new Date(d + "T12:00:00").getDay();
+}
+function weekName(d: string) {
+	return WEEK[weekday(d)];
+}
+const week = computed(() =>
+	Array.from({ length: 7 }, (_, i) => {
+		const d = addDays(weekStart.value, i);
+		return { date: d, week: WEEK[i], day: Number(d.slice(8)) };
+	})
+);
+function icon(t: string) {
+	const h = Number(t.slice(0, 2));
+	return h < 11 ? "☀️" : h < 17 ? "🌤" : "🌙";
+}
+function period(t: string) {
+	const h = Number(t.slice(0, 2));
+	return h < 11 ? "早上" : h < 14 ? "中午" : h < 18 ? "下午" : "晚上";
+}
+function shiftWeek(n: number) {
+	weekStart.value = addDays(weekStart.value, n);
+	pick(addDays(date.value, n));
+}
+function pick(d: string) {
+	date.value = d;
+	load();
+}
+function edit(id: number) {
+	open("health-form", `petId=${petId.value}&type=3&id=${id}`);
+}
+function create() {
+	open("health-form", `petId=${petId.value}&type=3`);
+}
+async function toggle(plan: DosePlan, dose: DosePlan["doses"][number]) {
+	if (!requireLogin() || busy.value) return;
+	busy.value = plan.id + dose.time;
+	try {
+		const r = await takeDose(plan.id, dose.time, !dose.taken, date.value);
+		dose.taken = r.taken;
+		dose.takenAt = r.takenAt;
+	} catch (e) {
+		/* 请求层已提示 */
+	} finally {
+		busy.value = "";
+	}
+}
+async function load() {
+	if (petId.value <= 0 || guest.value) {
+		day.value = { date: date.value, active: [], upcoming: [], history: [] };
+		return;
+	}
+	loading.value = true;
+	error.value = "";
+	try {
+		day.value = await medications(petId.value, date.value);
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+onLoad((opts) => {
+	petId.value = Number(opts?.petId || 0);
+	weekStart.value = addDays(date.value, -weekday(date.value));
+});
+onShow(async () => {
+	await refresh();
+	await load();
+});
+</script>
+<style scoped>
+.pet-head {
+	gap: 12px;
+}
+.head-note {
+	white-space: pre-line;
+	font-size: 12px;
+	color: #398b5a;
+	font-style: italic;
+	text-align: right;
+}
+.week {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 8px 4px;
+}
+.week-arrow {
+	width: 22px;
+}
+.week-arrow.flip {
+	transform: rotate(180deg);
+}
+.day {
+	flex: 1;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 0;
+	border-radius: 10px;
+}
+.day-week {
+	font-size: 11px;
+	color: #818984;
+}
+.day-num {
+	font-size: 16px;
+	font-weight: 600;
+}
+.day.today .day-num {
+	color: #329e6b;
+}
+.day.selected {
+	background: #48aa7b;
+}
+.day.selected text {
+	color: #fff;
+}
+.plan {
+	background: #f3faf5;
+	border-radius: 12px;
+	padding: 12px;
+	margin-top: 10px;
+}
+.plan-head {
+	gap: 10px;
+	margin-bottom: 6px;
+}
+.dose-tag {
+	margin-left: 6px;
+	font-size: 11px;
+	color: #329e6b;
+	background: #e1f2e6;
+	border-radius: 8px;
+	padding: 2px 6px;
+}
+.dose {
+	background: #fff;
+	border-radius: 10px;
+	padding: 10px;
+	margin-top: 8px;
+}
+.dose-time {
+	gap: 10px;
+}
+.dose-icon {
+	font-size: 22px;
+}
+.dose-action {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 2px;
+}
+.taken-at {
+	font-size: 10px;
+}
+.progress {
+	margin-top: 12px;
+}
+.progress-text {
+	font-size: 14px;
+	margin: 4px 0;
+}
+.bar {
+	height: 6px;
+	background: #e6ebe5;
+	border-radius: 3px;
+	overflow: hidden;
+}
+.bar-fill {
+	height: 100%;
+	background: #48aa7b;
+}
+.history {
+	padding: 12px 0;
+	border-bottom: 1px solid #edf0ea;
+}
+.history:last-child {
+	border: 0;
+}
+.done-tag {
+	font-size: 12px;
+	color: #329e6b;
+	background: #e6f4ea;
+	border-radius: 12px;
+	padding: 4px 10px;
+}
+</style>

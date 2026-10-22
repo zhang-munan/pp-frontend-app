@@ -47,6 +47,21 @@ function toastError(message: string | undefined, silent?: boolean) {
 	});
 }
 
+// 后端 PlusRequiredException：免费额度用完或使用会员专属功能
+export const PLUS_REQUIRED_CODE = 2001;
+
+function showPlusGuide(message?: string) {
+	uni.showModal({
+		title: "开通毛与叶 Plus",
+		content: message || "该功能为 Plus 会员专属",
+		confirmText: "去看看",
+		cancelText: "再想想",
+		success(res) {
+			if (res.confirm) uni.navigateTo({ url: "/package-user/membership" });
+		}
+	});
+}
+
 // 判断当前url是否忽略token校验
 const isIgnoreToken = (url: string) => {
 	return ignoreTokens.some((e) => {
@@ -137,6 +152,10 @@ export function request<T = any>(options: RequestOptions): Promise<T | null> {
 								case 1000:
 									resolve(data);
 									break;
+								case PLUS_REQUIRED_CODE:
+									if (!options.silent) showPlusGuide(message);
+									reject({ message, code } as Response);
+									break;
 								default:
 									toastError(message, options.silent);
 									reject({ message, code } as Response);
@@ -166,6 +185,7 @@ export function request<T = any>(options: RequestOptions): Promise<T | null> {
 					if (storage.isExpired("refreshToken")) {
 						// 刷新token也过期，直接退出登录
 						user.logout();
+						reject({ message: t("请先登录") } as Response);
 						return;
 					}
 
@@ -180,6 +200,11 @@ export function request<T = any>(options: RequestOptions): Promise<T | null> {
 								isRefreshing = false;
 							})
 							.catch((err) => {
+								// 队列里等待刷新的请求也要结束，否则调用方会一直挂起
+								const waiting = requests;
+								requests = [];
+								isRefreshing = false;
+								waiting.forEach((cb) => cb(""));
 								reject(err);
 								user.logout();
 							});

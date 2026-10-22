@@ -1,0 +1,228 @@
+<template>
+	<MPage title="导出疫苗本" back>
+		<view v-if="locked" class="m-card m-empty"
+			><MIcon name="crown" color="amber" :size="40" /><view class="m-name"
+				>疫苗本导出为 Plus 会员专属</view
+			><view class="m-sub">一张图收好全部接种与驱虫记录，就医、寄养时随手出示</view
+			><button class="m-button full" @tap="open('membership')">了解 Plus</button></view
+		>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<view v-else-if="!book" class="m-note">正在生成…</view>
+		<template v-else
+			><view class="m-card canvas-card"
+				><canvas
+					id="book"
+					type="2d"
+					class="book-canvas"
+					:style="{ width: W + 'px', height: height + 'px' }"
+			/></view>
+			<view class="m-note"
+				>共 {{ book.vaccines.length }} 条接种、{{ book.deworms.length }} 条驱虫记录。图片仅保存在你的手机相册。</view
+			><view v-if="message" class="m-error-text">{{ message }}</view
+			><button class="m-button full" :disabled="saving" @tap="save">
+				{{ saving ? "正在保存…" : "保存到相册" }}
+			</button></template
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed, nextTick } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { vaccineBook, type VaccineBook, type VaccineBookRow } from "@/api/pet";
+import { open, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const W = 345,
+	ROW = 30,
+	HEAD = 150;
+const petId = ref(0),
+	book = ref<VaccineBook | null>(null),
+	locked = ref(false),
+	error = ref(""),
+	message = ref(""),
+	saving = ref(false);
+let canvasNode: any = null;
+const sections = computed(() => {
+	const b = book.value;
+	if (!b) return [];
+	return [
+		{
+			title: "疫苗接种",
+			cols: ["接种日期", "疫苗", "医院", "下次"],
+			rows: b.vaccines.map((r) => [r.occurDate, r.itemName, r.hospital || "—", r.nextDate || "—"])
+		},
+		{
+			title: "驱虫记录",
+			cols: ["日期", "类型", "药品", "下次"],
+			rows: b.deworms.map((r) => [r.occurDate, r.subType || "—", r.itemName, r.nextDate || "—"])
+		},
+		{
+			title: "接下来",
+			cols: ["计划日期", "项目", "", ""],
+			rows: b.upcoming.map((r: VaccineBookRow) => [r.nextDate || "", r.subType ? r.subType + "驱虫" : r.itemName, "", ""])
+		}
+	];
+});
+const height = computed(
+	() =>
+		HEAD +
+		sections.value.reduce((h, s) => h + 56 + Math.max(1, s.rows.length) * ROW, 0) +
+		50
+);
+function fit(ctx: any, text: string, max: number) {
+	let s = String(text || "");
+	if (ctx.measureText(s).width <= max) return s;
+	while (s.length > 1 && ctx.measureText(s + "…").width > max) s = s.slice(0, -1);
+	return s + "…";
+}
+function queryCanvas(): Promise<any> {
+	return new Promise((resolve, reject) => {
+		uni.createSelectorQuery()
+			.select("#book")
+			.fields({ node: true, size: true }, () => {})
+			.exec((res: any) => (res?.[0]?.node ? resolve(res[0].node) : reject(new Error("画布未就绪"))));
+	});
+}
+function loadImage(canvas: any, src?: string): Promise<any> {
+	return new Promise((resolve) => {
+		if (!src) return resolve(null);
+		const img = canvas.createImage();
+		img.onload = () => resolve(img);
+		img.onerror = () => resolve(null);
+		img.src = src;
+	});
+}
+async function draw() {
+	const b = book.value;
+	if (!b) return;
+	const canvas = await queryCanvas();
+	canvasNode = canvas;
+	const dpr = uni.getSystemInfoSync().pixelRatio || 2,
+		H = height.value;
+	canvas.width = W * dpr;
+	canvas.height = H * dpr;
+	const ctx = canvas.getContext("2d");
+	ctx.scale(dpr, dpr);
+	ctx.fillStyle = "#fbf8f3";
+	ctx.fillRect(0, 0, W, H);
+	ctx.fillStyle = "#48aa7b";
+	ctx.fillRect(0, 0, W, 110);
+	ctx.fillStyle = "#ffffff";
+	ctx.font = "bold 20px sans-serif";
+	ctx.fillText("疫苗本", 92, 38);
+	ctx.font = "16px sans-serif";
+	ctx.fillText(fit(ctx, b.pet.name, 220), 92, 64);
+	ctx.font = "12px sans-serif";
+	const info = [b.pet.breed || b.pet.species, b.pet.gender, b.pet.neutered ? "已绝育" : "未绝育"]
+		.filter(Boolean)
+		.join(" · ");
+	ctx.fillText(fit(ctx, info, 240), 92, 86);
+	if (b.pet.birthday) ctx.fillText("生日 " + b.pet.birthday, 92, 102);
+	const avatar = await loadImage(canvas, b.pet.avatar);
+	ctx.fillStyle = "#ffffff";
+	ctx.beginPath();
+	ctx.arc(46, 56, 32, 0, Math.PI * 2);
+	ctx.fill();
+	if (avatar) {
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(46, 56, 30, 0, Math.PI * 2);
+		ctx.clip();
+		ctx.drawImage(avatar, 16, 26, 60, 60);
+		ctx.restore();
+	}
+	let y = HEAD - 16;
+	const colX = [16, 104, 200, 272],
+		colW = [84, 92, 68, 66];
+	for (const s of sections.value) {
+		ctx.fillStyle = "#33453a";
+		ctx.font = "bold 15px sans-serif";
+		ctx.fillText(s.title, 16, y + 16);
+		y += 28;
+		ctx.fillStyle = "#eef7f0";
+		ctx.fillRect(12, y, W - 24, 24);
+		ctx.fillStyle = "#329e6b";
+		ctx.font = "12px sans-serif";
+		s.cols.forEach((c, i) => c && ctx.fillText(c, colX[i], y + 16));
+		y += 28;
+		ctx.fillStyle = "#33453a";
+		if (!s.rows.length) {
+			ctx.fillStyle = "#88918a";
+			ctx.fillText("暂无记录", 16, y + 18);
+			y += ROW;
+		}
+		for (const row of s.rows) {
+			row.forEach((cell, i) => {
+				if (!cell) return;
+				ctx.fillText(fit(ctx, cell, i === 1 && !row[2] ? 220 : colW[i] - 6), colX[i], y + 18);
+			});
+			ctx.strokeStyle = "#edf0ea";
+			ctx.beginPath();
+			ctx.moveTo(12, y + ROW - 2);
+			ctx.lineTo(W - 12, y + ROW - 2);
+			ctx.stroke();
+			y += ROW;
+		}
+	}
+	ctx.fillStyle = "#88918a";
+	ctx.font = "11px sans-serif";
+	ctx.fillText(`生成于 ${b.generatedAt} · 毛与叶`, 16, H - 20);
+	ctx.fillText("记录仅供参考，请以兽医诊疗为准", W - 186, H - 20);
+}
+function toPromise<T>(fn: (opts: any) => void, opts: any): Promise<T> {
+	return new Promise((resolve, reject) => fn({ ...opts, success: resolve, fail: reject }));
+}
+async function save() {
+	if (saving.value || !canvasNode) return;
+	saving.value = true;
+	message.value = "";
+	try {
+		const r = await toPromise<{ tempFilePath: string }>(uni.canvasToTempFilePath, {
+			canvas: canvasNode,
+			fileType: "png"
+		});
+		await toPromise(uni.saveImageToPhotosAlbum, { filePath: r.tempFilePath });
+		uni.showToast({ title: "已保存到相册" });
+	} catch (e: any) {
+		if (/auth|deny|authorize/i.test(e?.errMsg || "")) {
+			uni.showModal({
+				title: "需要相册权限",
+				content: "请在设置中允许保存到相册",
+				confirmText: "去设置",
+				success: (r) => r.confirm && uni.openSetting({})
+			});
+		} else if (!/cancel/i.test(e?.errMsg || "")) message.value = "保存失败，请重试";
+	} finally {
+		saving.value = false;
+	}
+}
+async function load() {
+	error.value = "";
+	locked.value = false;
+	if (!requireLogin()) return;
+	try {
+		book.value = await vaccineBook(petId.value);
+		await nextTick();
+		setTimeout(() => draw().catch((e) => (message.value = errorMessage(e))), 60);
+	} catch (e: any) {
+		if (e?.code === 2001) locked.value = true;
+		else error.value = errorMessage(e);
+	}
+}
+onLoad((opts) => {
+	petId.value = Number(opts?.petId || 0);
+	load();
+});
+</script>
+<style scoped>
+.canvas-card {
+	padding: 0;
+	overflow: hidden;
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+}
+.book-canvas {
+	display: block;
+}
+</style>

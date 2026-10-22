@@ -11,8 +11,8 @@ export const proxy = {
 
 	// 生产环境配置
 	prod: {
-		// 官方测试地址
-		target: "https://example.com",  // TODO: 部署后替换为实际生产域名
+		// 生产域名在 .env.production 的 VITE_APP_HOST 中配置
+		target: (import.meta.env.VITE_APP_HOST as string) || "https://example.com",
 		changeOrigin: true,
 		rewrite: (path: string) => path.replace("/prod", "/maoyu_api")
 	}

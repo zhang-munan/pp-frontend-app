@@ -1,0 +1,214 @@
+<template>
+	<MPage title="家庭共享" back>
+		<view v-if="guest" class="m-card m-empty"
+			><MIcon name="group" :size="40" /><view class="m-sub">登录后邀请家人一起关心小伙伴</view
+			><button class="m-button full" @tap="login">登录 / 注册</button></view
+		>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<template v-else-if="data"
+			><view class="hero"
+				><view class="m-grow"
+					><view class="hero-title">共享 {{ sharedPets.length }} 只宠物、{{ sharedPlants.length }} 株植物</view
+					><view class="m-sub">家人可以查看，记录由主人维护。</view></view
+				><image class="hero-art" :src="asset('cat-leaves.png')" mode="aspectFit"
+			/></view>
+			<view class="m-card"
+				><view class="m-heading">家庭成员</view
+				><view class="m-row member"
+					><image class="m-avatar" :src="data.owner?.avatarUrl || asset('profile-avatar.jpg')" mode="aspectFill" /><view
+						class="m-grow"
+						><view class="m-name">{{ data.owner?.nickName || "我" }}<text class="m-green">（主人）</text></view
+						><view class="m-sub">管理家庭共享，维护所有记录</view></view
+					><text class="tag owner">主人</text></view
+				><view v-for="m in data.members" :key="m.id" class="m-row member"
+					><image class="m-avatar" :src="m.avatarUrl || asset('profile-avatar.jpg')" mode="aspectFill" /><view class="m-grow"
+						><view class="m-name">{{ m.nickName }}<text class="m-sub">（只读）</text></view
+						><view class="m-sub">可以查看共享的宠物和植物记录</view></view
+					><text class="tag">只读</text></view
+				><view v-for="p in data.pending" :key="'i' + p.id" class="m-row member"
+					><view class="m-avatar pending-avatar"><MIcon name="clock" color="muted" :size="20" /></view
+					><view class="m-grow"
+						><view class="m-name">待接受的邀请</view
+						><view class="m-sub">有效期至 {{ p.expireTime.slice(0, 16) }}</view></view
+					><button class="m-button small outline" @tap="revoke(p.id)">撤销</button></view
+				><view v-if="!data.members.length && !data.pending.length" class="m-sub empty-tip"
+					>还没有家人加入，点击下方「邀请家人」发送邀请卡</view
+				></view
+			>
+			<view class="m-card"
+				><view class="m-heading">共享内容</view
+				><view v-if="sharedItems.length" class="share-grid"
+					><view v-for="s in sharedItems" :key="s.key" class="share-item"
+						><image :src="s.image" mode="aspectFill" /><text>{{ s.name }}</text></view
+					></view
+				><view v-else class="m-sub empty-tip">还没有选择共享的档案</view></view
+			>
+			<view class="m-card"
+				><view class="m-heading">更多操作</view
+				><button class="m-plain m-menu-row action" @tap="open('family-invite', 'mode=manage')">
+					<MIcon name="group" /><text>管理共享档案</text><MIcon name="chevron" color="muted" :size="16" /></button
+				><button class="m-plain m-menu-row action" @tap="chooseRemove">
+					<MIcon name="close" color="amber" /><text>移除成员</text><MIcon name="chevron" color="muted" :size="16" /></button
+			></view>
+			<view v-if="data.joined.length" class="m-card"
+				><view class="m-heading">我加入的家庭</view
+				><view v-for="j in data.joined" :key="j.ownerId" class="m-row member" @tap="open('family-view', 'ownerId=' + j.ownerId)"
+					><image class="m-avatar" :src="j.avatarUrl || asset('profile-avatar.jpg')" mode="aspectFill" /><view class="m-grow"
+						><view class="m-name">{{ j.nickName }}的家庭</view
+						><view class="m-sub">共享 {{ j.petCount }} 只宠物、{{ j.plantCount }} 株植物</view></view
+					><button class="m-button small outline" @tap.stop="leave(j)">退出</button
+					><MIcon name="chevron" color="muted" :size="16" /></view
+			></view>
+			<button class="m-button full" @tap="open('family-invite')">邀请家人</button></template
+		>
+		<view v-else class="m-note">正在加载…</view>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { familyOverview, familyRemoveMember, familyLeave, type FamilyOverview } from "@/api/family";
+import { useMaoyu, asset, photo, open, login } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const { guest, refresh } = useMaoyu();
+const data = ref<FamilyOverview | null>(null),
+	error = ref("");
+const sharedPets = computed(() => (data.value?.pets || []).filter((p) => p.shared));
+const sharedPlants = computed(() => (data.value?.plants || []).filter((p) => p.shared));
+const sharedItems = computed(() => [
+	...sharedPets.value.map((p) => ({ key: "p" + p.id, name: p.name, image: photo(p, "pet") })),
+	...sharedPlants.value.map((p) => ({ key: "l" + p.id, name: p.name, image: photo(p) }))
+]);
+async function load() {
+	error.value = "";
+	try {
+		data.value = await familyOverview();
+	} catch (e) {
+		error.value = errorMessage(e, "加载失败，请重试");
+	}
+}
+function revoke(id: number) {
+	uni.showModal({
+		title: "撤销邀请",
+		content: "撤销后这张邀请卡将无法再使用",
+		success: async (r) => {
+			if (!r.confirm) return;
+			await familyRemoveMember(id).catch(() => null);
+			load();
+		}
+	});
+}
+function chooseRemove() {
+	const members = data.value?.members || [];
+	if (!members.length) return uni.showToast({ title: "还没有家庭成员", icon: "none" });
+	uni.showActionSheet({
+		itemList: members.map((m) => m.nickName),
+		success: (r) => {
+			const m = members[r.tapIndex];
+			uni.showModal({
+				title: "移除成员",
+				content: `移除后「${m.nickName}」将无法再查看你共享的档案`,
+				confirmColor: "#c95b54",
+				success: async (c) => {
+					if (!c.confirm) return;
+					await familyRemoveMember(m.id).catch(() => null);
+					load();
+				}
+			});
+		}
+	});
+}
+function leave(j: FamilyOverview["joined"][number]) {
+	uni.showModal({
+		title: "退出家庭",
+		content: `退出后将无法查看「${j.nickName}」共享的档案`,
+		success: async (r) => {
+			if (!r.confirm) return;
+			await familyLeave(j.ownerId).catch(() => null);
+			load();
+		}
+	});
+}
+onShow(async () => {
+	await refresh();
+	if (!guest.value) load();
+});
+</script>
+<style scoped>
+.hero {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	background: linear-gradient(120deg, #e3f2e8, #f4f9f1);
+	border-radius: 16px;
+	padding: 18px 16px;
+	margin-bottom: 12px;
+}
+.hero-title {
+	font-size: 19px;
+	font-weight: 700;
+	color: #1f2a24;
+	margin-bottom: 6px;
+}
+.hero-art {
+	width: 96px;
+	height: 80px;
+}
+.member {
+	gap: 12px;
+	padding: 12px 0;
+	border-bottom: 1px solid #eff0ee;
+}
+.member:last-child {
+	border: 0;
+}
+.member .m-avatar {
+	width: 52px;
+	height: 52px;
+}
+.pending-avatar {
+	background: #f1f3f0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.tag {
+	font-size: 12px;
+	padding: 3px 12px;
+	border-radius: 12px;
+	background: #f0f1ef;
+	color: #6d726e;
+}
+.tag.owner {
+	background: #e3f3ea;
+	color: #2f8f5b;
+}
+.share-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+	margin-top: 10px;
+}
+.share-item {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+}
+.share-item image {
+	width: 100%;
+	height: 72px;
+	border-radius: 10px;
+}
+.action {
+	border: 1px solid #eceee9;
+	border-radius: 10px;
+	padding: 0 12px;
+	margin-top: 10px;
+}
+.empty-tip {
+	padding: 10px 0;
+}
+</style>

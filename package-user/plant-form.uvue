@@ -84,7 +84,41 @@
 					><input type="number" class="cycle-input" v-model="cycleInput" /><text
 						>天提醒一次</text
 					></view
+				><view class="m-between season"
+					><view class="m-grow"
+						><view class="m-name">按季节自动调整</view
+						><view class="m-sub">夏季缩短、冬季延长浇水间隔</view></view
+					><switch
+						:checked="autoSeason"
+						color="#48aa7b"
+						@change="autoSeason = $event.detail.value"
+				/></view
 				><view class="m-sub">参考周期可自行调整，请结合土壤干湿决定是否浇水。</view></view
+			>
+			<view class="m-card"
+				><text class="m-label">施肥提醒</text
+				><view class="cycle-control fertilize"
+					><MIcon name="leaf" color="amber" :size="30" /><text>每</text
+					><input
+						type="number"
+						class="cycle-input"
+						placeholder="—"
+						v-model="fertilizeInput" /><text>天施肥一次</text></view
+				><view class="m-sub">填 0 表示不提醒施肥；留空时按品种参考值设置。</view></view
+			>
+			<view v-if="editing" class="m-card"
+				><text class="m-label">养护状态</text
+				><view class="m-choices"
+					><button
+						v-for="(name, i) in PLANT_STATUS_NAMES"
+						:key="name"
+						class="m-choice"
+						:class="{ selected: status === i }"
+						@tap="changeStatus(i)"
+					>
+						{{ name }}
+					</button></view
+				><view class="m-sub">已枯萎或已送人的植物会保留记录，但不再提醒。</view></view
 			>
 			<view v-if="!editing" class="m-card"
 				><text class="m-label">上次浇水</text
@@ -116,7 +150,9 @@
 			>
 			<view v-if="message" class="m-error-text">{{ message }}</view
 			><button class="m-button full" :disabled="saving" @tap="save">
-				{{ saving ? "正在保存…" : "保存并创建提醒" }}</button
+				{{ saving ? "正在保存…" : editing ? "保存修改" : "保存并创建提醒" }}</button
+			><button v-if="editing" class="m-button full outline danger" :disabled="saving" @tap="remove">
+				删除档案</button
 			><view class="m-note">{{
 				guest ? "保存时需要登录，草稿会为你保留" : "和绿植一起慢慢长大"
 			}}</view></template
@@ -131,11 +167,14 @@ import { upload } from "@/.cool";
 import {
 	addPlant,
 	updatePlant,
+	deletePlant,
+	setPlantStatus,
 	searchSpecies,
 	LOCATION_NAMES,
+	PLANT_STATUS_NAMES,
 	type PlantSpecies
 } from "@/api/plant";
-import { useMaoyu, asset, dateKey, addDays, requireLogin } from "@/composables/maoyu";
+import { useMaoyu, asset, dateKey, requireLogin } from "@/composables/maoyu";
 import { errorMessage } from "@/utils/error";
 const { guest, visiblePlants, refresh } = useMaoyu(),
 	searchMode = ref(false),
@@ -147,7 +186,10 @@ const { guest, visiblePlants, refresh } = useMaoyu(),
 	localPhoto = ref(""),
 	saving = ref(false),
 	message = ref(""),
-	cycleInput = ref("6");
+	cycleInput = ref("6"),
+	fertilizeInput = ref(""),
+	autoSeason = ref(true),
+	status = ref(0);
 const form = ref({
 	name: "",
 	speciesName: "",
@@ -158,8 +200,14 @@ const form = ref({
 });
 const key = () => `maoyu_plant_draft_${plantId.value > 0 ? plantId.value : "new"}`;
 watch(
-	[form, cycleInput],
-	() => uni.setStorageSync(key(), { ...form.value, cycle: cycleInput.value }),
+	[form, cycleInput, fertilizeInput, autoSeason],
+	() =>
+		uni.setStorageSync(key(), {
+			...form.value,
+			cycle: cycleInput.value,
+			fertilize: fertilizeInput.value,
+			autoSeason: autoSeason.value
+		}),
 	{ deep: true }
 );
 let timer: any,
@@ -183,7 +231,46 @@ onUnmounted(() => clearTimeout(timer));
 function selectSpecies(p: PlantSpecies) {
 	form.value.speciesName = p.name;
 	cycleInput.value = String(p.waterCycleDays || 6);
+	if (p.fertilizeCycleDays !== undefined) fertilizeInput.value = String(p.fertilizeCycleDays);
 	searchMode.value = false;
+}
+function changeStatus(i: number) {
+	if (i === status.value || saving.value) return;
+	uni.showModal({
+		title: `标记为「${PLANT_STATUS_NAMES[i]}」？`,
+		content: i ? "将停止该植物的浇水与施肥提醒，记录会保留" : "将恢复提醒，并占用一个植物名额",
+		success: async (r) => {
+			if (!r.confirm) return;
+			try {
+				await setPlantStatus(plantId.value, i);
+				status.value = i;
+				await refresh();
+			} catch (e) {
+				message.value = errorMessage(e);
+			}
+		}
+	});
+}
+function remove() {
+	uni.showModal({
+		title: "删除这个植物档案？",
+		content: "养护记录和照片记录会一并删除，且无法恢复",
+		confirmColor: "#d9534f",
+		success: async (r) => {
+			if (!r.confirm) return;
+			saving.value = true;
+			try {
+				await deletePlant(plantId.value);
+				uni.removeStorageSync(key());
+				await refresh();
+				uni.switchTab({ url: "/pages/plant" });
+			} catch (e) {
+				message.value = errorMessage(e);
+			} finally {
+				saving.value = false;
+			}
+		}
+	});
 }
 function choosePhoto() {
 	uni.chooseImage({
@@ -207,6 +294,11 @@ async function save() {
 		message.value = "浇水周期需为 1–365 天的整数";
 		return;
 	}
+	const fertilize = fertilizeInput.value.trim() === "" ? undefined : Number(fertilizeInput.value);
+	if (fertilize !== undefined && (!Number.isInteger(fertilize) || fertilize < 0 || fertilize > 365)) {
+		message.value = "施肥周期需为 0–365 天的整数";
+		return;
+	}
 	if (!requireLogin()) return;
 	saving.value = true;
 	try {
@@ -220,10 +312,8 @@ async function save() {
 			arriveDate: form.value.arriveDate || undefined,
 			lastWaterDate: form.value.lastWaterDate || undefined,
 			waterCycleDays: cycle,
-			fertilizeCycleDays: 30,
-			nextWaterDate: form.value.lastWaterDate
-				? addDays(form.value.lastWaterDate, cycle)
-				: dateKey()
+			fertilizeCycleDays: fertilize,
+			autoSeason: autoSeason.value ? 1 : 0
 		};
 		if (editing.value && plantId.value > 0) await updatePlant({ ...data, id: plantId.value });
 		else await addPlant(data);
@@ -252,12 +342,23 @@ onLoad(async (opts) => {
 				lastWaterDate: p.lastWaterDate || ""
 			};
 			cycleInput.value = String(p.waterCycleDays);
+			fertilizeInput.value = String(p.fertilizeCycleDays ?? "");
+			autoSeason.value = (p.autoSeason ?? 1) === 1;
+			status.value = p.status || 0;
 		}
+	} else if (opts?.species) {
+		form.value.speciesName = decodeURIComponent(opts.species);
+		if (opts.photo) form.value.avatar = decodeURIComponent(opts.photo);
+		if (opts.cycle) cycleInput.value = String(opts.cycle);
+		if (opts.fertilize !== undefined) fertilizeInput.value = String(opts.fertilize);
 	} else {
 		const draft = uni.getStorageSync(key());
 		if (draft) {
-			form.value = draft;
-			cycleInput.value = draft.cycle || "6";
+			const { cycle, fertilize, autoSeason: season, ...rest } = draft;
+			form.value = rest;
+			cycleInput.value = cycle || "6";
+			fertilizeInput.value = fertilize || "";
+			autoSeason.value = season !== false;
 		}
 	}
 	searchMode.value = opts?.mode === "search";
@@ -309,6 +410,17 @@ onLoad(async (opts) => {
 	align-items: center;
 	gap: 12px;
 	margin-bottom: 10px;
+}
+.cycle-control.fertilize {
+	background: #fdf6e7;
+}
+.season {
+	margin-bottom: 10px;
+}
+.danger {
+	color: #d9534f;
+	border-color: #f0c4c2;
+	margin-top: 10px;
 }
 .cycle-input {
 	width: 45px;

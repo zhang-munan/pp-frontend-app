@@ -15,7 +15,7 @@
 			><button class="message m-plain" aria-label="消息中心" @tap="open('notifications')">
 				<view class="message-icon"
 					><MIcon name="bell" color="muted" :size="24" /><view
-						v-if="today.total"
+						v-if="unread > 0"
 						class="message-dot" /></view
 				><text>消息中心</text>
 			</button></view
@@ -70,7 +70,41 @@
 					去看看
 				</button></view
 			>
-			<view v-if="!loading && !waterItems.length && !healthItems.length" class="m-empty"
+			<view class="todo m-row" v-for="f in fertilizeItems" :key="'f' + f.id"
+				><image class="m-photo todo-image" :src="photo(f)" mode="aspectFill" @tap="plantDetail(f.id)" /><view
+					class="m-grow"
+					><view class="m-name">{{ f.name }}<text v-if="f.speciesName"> · {{ f.speciesName }}</text></view
+					><view class="m-sub">{{ f.overdueDays > 0 ? `施肥已超期 ${f.overdueDays} 天` : "今天该施肥啦" }}</view></view
+				><button class="m-button small soft" :disabled="busy === 'f' + f.id" @tap="fertilize(f.id)">
+					<MIcon name="leaf" color="amber" :size="15" />施肥
+				</button></view
+			>
+			<view class="todo m-row" v-for="d in doseItems" :key="'d' + d.healthId + d.time"
+				><image class="m-photo todo-image" :src="d.petAvatar || asset('cat-avatar.jpg')" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="m-name">{{ d.petName }} · {{ d.time }}</view
+					><view class="m-sub">{{ d.itemName }}{{ d.dosage ? " " + d.dosage : "" }}</view></view
+				><button
+					class="m-button small"
+					:class="{ outline: d.taken }"
+					:disabled="busy === 'd' + d.healthId + d.time"
+					@tap="toggleDose(d)"
+				>
+					{{ d.taken ? "已服用" : "服药" }}
+				</button></view
+			>
+			<view class="todo m-row" v-for="c in checkinItems" :key="'c' + c.petId"
+				><image class="m-photo todo-image" :src="c.petAvatar || asset('cat-avatar.jpg')" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="m-name">{{ c.petName }}</view
+					><view class="m-sub">今天还没打卡，记一下 TA 的日常吧</view></view
+				><button class="m-button outline small" @tap="open('health-form', `petId=${c.petId}&type=5`)">
+					去打卡
+				</button></view
+			>
+			<view
+				v-if="!loading && !waterItems.length && !healthItems.length && !fertilizeItems.length && !doseItems.length && !checkinItems.length"
+				class="m-empty"
 				><MIcon name="check" :size="32" /><view class="m-sub"
 					>今天的小伙伴都照顾好啦</view
 				></view
@@ -108,11 +142,15 @@
 	</MPage>
 </template>
 <script setup lang="ts">
-import { computed } from "vue";
+import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
 import MTabbar from "@/components/MTabbar.uvue";
-import { useMaoyu, asset, photo, open, waterText, isDue, ageText } from "@/composables/maoyu";
+import { addCare } from "@/api/plant";
+import { takeDose } from "@/api/pet";
+import type { DoseTodo } from "@/api/care";
+import { askSubscribe } from "@/utils/subscribe";
+import { useMaoyu, asset, photo, open, waterText, isDue, ageText, requireLogin } from "@/composables/maoyu";
 const {
 	user,
 	guest,
@@ -126,7 +164,8 @@ const {
 	pending,
 	undo,
 	undoMessage,
-	selectedPet
+	selectedPet,
+	unread
 } = useMaoyu();
 const dateLabel = new Date().toLocaleDateString("zh-CN", {
 	month: "long",
@@ -153,9 +192,41 @@ const healthItems = computed(() =>
 			]
 		: today.value.health
 );
-const friends = computed(() => [
-	...visiblePets.value
-		.slice(0, 1)
+const fertilizeItems = computed(() => (guest.value ? [] : today.value.fertilize || []));
+const doseItems = computed(() => (guest.value ? [] : today.value.medication || []));
+const checkinItems = computed(() => (guest.value ? [] : today.value.checkin || []));
+const busy = ref("");
+async function fertilize(id: number) {
+	if (!requireLogin() || busy.value) return;
+	askSubscribe(["care"]);
+	busy.value = "f" + id;
+	try {
+		await addCare({ plantId: id, type: 1 });
+		uni.showToast({ title: "已记录施肥" });
+		await refresh();
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		busy.value = "";
+	}
+}
+async function toggleDose(d: DoseTodo) {
+	if (!requireLogin() || busy.value) return;
+	if (!d.taken) askSubscribe(["medication"]);
+	busy.value = "d" + d.healthId + d.time;
+	try {
+		const r = await takeDose(d.healthId, d.time, !d.taken);
+		if (r.taken !== d.taken) today.value.total += r.taken ? -1 : 1;
+		d.taken = r.taken;
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		busy.value = "";
+	}
+}
+const friends = computed(() => {
+	const pets = visiblePets.value
+		.filter((p) => !p.status)
 		.map((p) => ({
 			key: "p" + p.id,
 			id: p.id,
@@ -163,9 +234,9 @@ const friends = computed(() => [
 			name: p.name,
 			image: photo(p, "pet"),
 			sub: ageText(p.birthday)
-		})),
-	...visiblePlants.value
-		.slice(0, 1)
+		}));
+	const plants = visiblePlants.value
+		.filter((p) => !p.status)
 		.map((p) => ({
 			key: "l" + p.id,
 			id: p.id,
@@ -173,8 +244,14 @@ const friends = computed(() => [
 			name: p.name,
 			image: photo(p),
 			sub: waterText(p)
-		}))
-]);
+		}));
+	const mixed: typeof pets = [];
+	for (let i = 0; i < Math.max(pets.length, plants.length); i++) {
+		if (pets[i]) mixed.push(pets[i]);
+		if (plants[i]) mixed.push(plants[i]);
+	}
+	return mixed;
+});
 function plantDetail(id: number) {
 	open("plant-detail", "id=" + id);
 }

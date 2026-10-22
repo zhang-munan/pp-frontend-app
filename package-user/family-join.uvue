@@ -1,0 +1,134 @@
+<template>
+	<MPage title="家庭邀请" back>
+		<view v-if="loading" class="m-note">正在打开邀请…</view>
+		<view v-else-if="error" class="m-card m-empty"
+			><MIcon name="group" :size="40" /><view class="m-sub">{{ error }}</view
+			><button class="m-button full outline" @tap="load">重试</button></view
+		>
+		<template v-else-if="info"
+			><view class="m-card invite"
+				><image class="m-avatar owner" :src="info.owner?.avatarUrl || asset('profile-avatar.jpg')" mode="aspectFill" /><view
+					class="m-heading"
+					>{{ info.owner?.nickName || "家人" }}邀请你一起关心小伙伴</view
+				><view class="m-sub">加入后可以只读查看 TA 共享的 {{ info.pets.length }} 只宠物、{{ info.plants.length }} 株植物</view
+				><view class="m-row covers"
+					><view v-for="c in covers" :key="c.key" class="cover"><image :src="c.image" mode="aspectFill" /><text>{{ c.name }}</text></view></view
+				></view
+			>
+			<view v-if="info.state !== 'ok'" class="m-note state">{{ STATE_TEXT[info.state] }}</view>
+			<button v-if="guest" class="m-button full" @tap="login">登录后接受邀请</button>
+			<button v-else-if="info.state === 'ok'" class="m-button full" :disabled="busy" @tap="accept">
+				{{ busy ? "加入中…" : "接受邀请" }}
+			</button>
+			<button v-else-if="info.state === 'joined'" class="m-button full" @tap="go">查看家庭</button>
+			<button class="m-button outline full later" @tap="home">先去看看</button></template
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { familyInvitation, familyAccept, type FamilyInvitation } from "@/api/family";
+import { useMaoyu, asset, photo, login } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const STATE_TEXT: Record<string, string> = {
+	self: "这是你自己发出的邀请，发送给家人后由家人接受",
+	joined: "你已经在这个家庭中啦",
+	used: "这张邀请卡已被使用或撤销，请让家人重新邀请",
+	expired: "邀请已过期，请让家人重新邀请"
+};
+const { guest, refresh } = useMaoyu();
+const code = ref(""),
+	info = ref<FamilyInvitation | null>(null),
+	loading = ref(true),
+	busy = ref(false),
+	error = ref("");
+const covers = computed(() => [
+	...(info.value?.pets || []).map((p) => ({ key: "p" + p.id, name: p.name, image: photo(p, "pet") })),
+	...(info.value?.plants || []).map((p) => ({ key: "l" + p.id, name: p.name, image: photo(p) }))
+].slice(0, 4));
+async function load() {
+	if (!code.value) {
+		loading.value = false;
+		error.value = "邀请链接无效";
+		return;
+	}
+	loading.value = true;
+	error.value = "";
+	try {
+		info.value = await familyInvitation(code.value);
+	} catch (e) {
+		error.value = errorMessage(e, "邀请加载失败");
+	} finally {
+		loading.value = false;
+	}
+}
+async function accept() {
+	if (busy.value) return;
+	busy.value = true;
+	try {
+		await familyAccept(code.value);
+		uni.showToast({ title: "已加入家庭" });
+		setTimeout(go, 600);
+	} catch (e) {
+		await load();
+	} finally {
+		busy.value = false;
+	}
+}
+function go() {
+	if (info.value) uni.redirectTo({ url: "/package-user/family-view?ownerId=" + info.value.ownerId });
+}
+function home() {
+	uni.switchTab({ url: "/pages/index" });
+}
+onLoad((o) => (code.value = String(o?.code || "")));
+onShow(async () => {
+	await refresh();
+	if (guest.value) {
+		loading.value = false;
+		info.value = info.value || ({ state: "ok", ownerId: 0, owner: { userId: 0, nickName: "家人" }, expireTime: "", pets: [], plants: [] } as FamilyInvitation);
+		return;
+	}
+	load();
+});
+</script>
+<style scoped>
+.invite {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: 8px;
+	padding: 24px 16px;
+}
+.owner {
+	width: 72px;
+	height: 72px;
+}
+.covers {
+	gap: 10px;
+	margin-top: 10px;
+	justify-content: center;
+	flex-wrap: wrap;
+}
+.cover {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+}
+.cover image {
+	width: 68px;
+	height: 68px;
+	border-radius: 10px;
+}
+.state {
+	text-align: center;
+}
+.later {
+	margin-top: 10px;
+}
+</style>

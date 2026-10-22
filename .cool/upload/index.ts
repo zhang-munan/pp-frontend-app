@@ -17,7 +17,7 @@ export type UploadTask = {
 
 // 上传选项类型定义
 export type UploadOptions = {
-	/** 云端对象存储目录，例如 send/app/user/avatar；未带 send 时会自动补齐 */
+	/** 云端对象存储目录，例如 maoyu/pets；未带 maoyu 时会自动补齐 */
 	prefixPath?: string;
 	onProgressUpdate?: (result: OnProgressUpdateResult) => void; // 上传进度回调
 	onTask?: (task: UploadTask) => void; // 上传任务回调
@@ -57,10 +57,10 @@ export type LocalUploadResponse = {
 	data: string;
 };
 
-const CLOUD_FILE_ROOT = "send";
+const CLOUD_FILE_ROOT = "maoyu";
 
 /**
- * 所有云端对象统一存放在 send 目录下，且避免调用方重复传入 send 前缀。
+ * 所有云端对象统一存放在 maoyu 目录下，且避免调用方重复传入 maoyu 前缀。
  */
 function withCloudFileRoot(path: string): string {
 	const normalized = path.replace(/(^\/+|\/+$)/g, "").replace(/\/+/g, "/");
@@ -135,7 +135,7 @@ export async function uploadFile(
 	// 生成唯一key: 原文件名_uuid.扩展名
 	let key = `${filename(fileName)}_${uuid()}.${ext}`;
 
-	// 云上传按业务目录存储，所有业务目录统一收口到 send 下
+	// 云上传按业务目录存储，所有业务目录统一收口到 maoyu 下
 	if (isCloud) {
 		const businessKey = options?.prefixPath
 			? pathJoin(options.prefixPath, key)
@@ -253,6 +253,7 @@ export async function uploadFile(
 						case "oss":
 							next({
 								url: d.host!,
+								preview: d.publicDomain,
 								data: {
 									OSSAccessKeyId: d.OSSAccessKeyId,
 									policy: d.policy,

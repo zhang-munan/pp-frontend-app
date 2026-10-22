@@ -1,0 +1,139 @@
+<template>
+	<MPage title="购买记录" back
+		><view v-if="error" class="m-error" @tap="reload">{{ error }} · 点击重试</view
+		><view v-for="o in list" :key="o.id" class="m-card order"
+			><view class="m-between"
+				><text class="m-name">{{ o.productName }}</text
+				><text :class="statusClass(o)">{{ statusText(o) }}</text></view
+			><view class="m-between m-sub"
+				><text>{{ (o.payTime || o.createTime || "").slice(0, 16) }}</text
+				><text class="amount">¥{{ formatYuan(o.payAmount) }}</text></view
+			><view v-if="o.refundStatus === 3 && o.refundRejectReason" class="m-sub"
+				>拒绝原因：{{ o.refundRejectReason }}</view
+			><view class="m-sub no">订单号 {{ o.orderNo }}</view
+			><view v-if="canPay(o) || canRefund(o)" class="actions"
+				><button v-if="canPay(o)" class="m-button small" @tap="payAgain(o)">继续支付</button
+				><button v-if="canRefund(o)" class="m-button small outline" @tap="refund(o)">
+					申请退款
+				</button></view
+			></view
+		><view v-if="!list.length && !loading && !error" class="m-card m-empty"
+			><view class="m-name">还没有购买记录</view
+			><view class="m-sub">开通 Plus 后，订单会显示在这里</view
+			><button class="m-button full" @tap="open('membership')">去看看会员</button></view
+		><button v-if="hasMore" class="m-plain m-link more" @tap="loadMore">加载更多</button
+		><view v-if="loading" class="m-note">加载中…</view></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import {
+	orderList,
+	applyRefund,
+	wxPay,
+	ORDER_STATUS_NAMES,
+	REFUND_STATUS_NAMES,
+	type OrderInfo
+} from "@/api/order";
+import { open } from "@/composables/maoyu";
+import { formatYuan } from "@/utils/money";
+import { errorMessage } from "@/utils/error";
+const list = ref<OrderInfo[]>([]),
+	page = ref(1),
+	hasMore = ref(false),
+	loading = ref(false),
+	error = ref("");
+function statusText(o: OrderInfo) {
+	if (o.status === 1 && o.refundStatus) return REFUND_STATUS_NAMES[o.refundStatus] || "已支付";
+	return ORDER_STATUS_NAMES[o.status] || "";
+}
+function statusClass(o: OrderInfo) {
+	if (o.status === 0) return "m-amber";
+	if (o.status === 1 && !o.refundStatus) return "m-green";
+	return "m-sub";
+}
+function canPay(o: OrderInfo) {
+	return o.status === 0;
+}
+function canRefund(o: OrderInfo) {
+	return o.status === 1 && Number(o.payAmount) > 0 && [0, 3].includes(Number(o.refundStatus || 0));
+}
+async function fetchPage(p: number) {
+	loading.value = true;
+	error.value = "";
+	try {
+		const res = await orderList(p, 20);
+		const rows = res?.list || [];
+		list.value = p === 1 ? rows : [...list.value, ...rows];
+		page.value = p;
+		hasMore.value = list.value.length < (res?.pagination?.total || 0);
+	} catch (e) {
+		error.value = errorMessage(e, "订单加载失败");
+	} finally {
+		loading.value = false;
+	}
+}
+function reload() {
+	fetchPage(1);
+}
+function loadMore() {
+	if (!loading.value) fetchPage(page.value + 1);
+}
+async function payAgain(o: OrderInfo) {
+	try {
+		const paid = await wxPay(o.id);
+		uni.showToast({ title: paid ? "支付成功" : "支付结果确认中", icon: "none" });
+	} catch (e) {
+		uni.showToast({ title: errorMessage(e, "支付失败"), icon: "none" });
+	}
+	reload();
+}
+function refund(o: OrderInfo) {
+	uni.showModal({
+		title: "申请退款",
+		editable: true,
+		placeholderText: "请填写退款原因（5-200字）",
+		confirmText: "提交",
+		success: async (res) => {
+			if (!res.confirm) return;
+			const reason = String(res.content || "").trim();
+			if (reason.length < 5) {
+				uni.showToast({ title: "退款原因至少 5 个字", icon: "none" });
+				return;
+			}
+			try {
+				await applyRefund(o.id, reason);
+				uni.showToast({ title: "已提交，等待审核", icon: "none" });
+				reload();
+			} catch (e) {
+				/* 请求层已提示 */
+			}
+		}
+	});
+}
+onShow(reload);
+</script>
+<style scoped>
+.order .m-name {
+	font-size: 16px;
+}
+.amount {
+	font-size: 15px;
+	font-weight: 600;
+	color: #26332e;
+}
+.no {
+	font-size: 11px;
+}
+.actions {
+	display: flex;
+	flex-direction: row;
+	justify-content: flex-end;
+	gap: 10px;
+	margin-top: 10px;
+}
+.more {
+	width: 100%;
+}
+</style>

@@ -1,5 +1,5 @@
 <template>
-	<view class="m-page" :style="{ '--head-height': headHeight + 'px' }"
+	<view class="m-page" :class="'theme-' + theme" :style="{ '--head-height': headHeight + 'px' }"
 		><view class="m-header" :class="{ secondary: back }"
 			><button v-if="back" class="m-back m-plain" aria-label="返回" @tap="goBack">
 				<MIcon name="back" color="muted" :size="25" /></button
@@ -9,7 +9,9 @@
 </template>
 <script setup lang="ts">
 import MIcon from "./MIcon.uvue";
+import { currentTheme } from "@/utils/theme";
 withDefaults(defineProps<{ title: string; back?: boolean }>(), { back: false });
+const theme = currentTheme();
 let headHeight = 100;
 // Mini program capsule and device safe area determine the header reservation.
 const info = uni.getSystemInfoSync();

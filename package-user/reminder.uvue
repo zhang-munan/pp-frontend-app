@@ -1,0 +1,199 @@
+<template>
+	<MPage title="养护提醒" back
+		><template v-if="plant"
+			><view class="m-card hero"
+				><image class="hero-photo" :src="photo(plant)" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="name-tag"
+						><MIcon name="leaf" :size="14" /><text>{{ plant.name }}</text></view
+					><view class="hero-title">{{ title }}</view
+					><view class="m-sub">{{
+						kind === "water" ? "给它一点水分，让绿意继续生长～" : "薄肥勤施，长得更精神"
+					}}</view
+					><view class="info"><text class="label">植物品种</text>{{ plant.speciesName || "未填写" }}</view
+					><view class="info"
+						><text class="label">摆放位置</text>{{ LOCATION_NAMES[plant.location] || "其他" }}</view
+					><view class="info"
+						><text class="label">{{ kind === "water" ? "上次浇水" : "上次施肥" }}</text
+						>{{ (kind === "water" ? plant.lastWaterDate : plant.lastFertilizeDate) || "暂无记录" }}</view
+					><view class="info"><text class="label">今天日期</text>{{ dateKey() }}</view></view
+				></view
+			><view class="m-card"
+				><view class="m-heading">养护建议</view
+				><view class="advice"
+					><MIcon :name="kind === 'water' ? 'water' : 'leaf'" :size="26" /><view class="m-grow"
+						><view class="m-name m-green">{{ adviceTitle }}</view
+						><view class="m-sub">{{ advice }}</view></view
+					></view
+				></view
+			><view class="m-card"
+				><view class="m-heading">相关操作</view
+				><button class="m-button full" :disabled="done || busy" @tap="finish">
+					{{ done ? "今天已完成" : kind === "water" ? "今天浇过了" : "今天施过肥了" }}
+				</button
+				><view class="snooze"
+					><view class="m-row snooze-title"
+						><MIcon name="clock" color="muted" :size="18" /><text>延后提醒</text></view
+					><view class="m-choices"
+						><button class="m-choice m-plain" :disabled="busy" @tap="snooze(1)">明天提醒</button
+						><picker
+							mode="date"
+							:start="addDays(dateKey(), 1)"
+							:end="addDays(dateKey(), 30)"
+							:value="addDays(dateKey(), 2)"
+							@change="snoozeTo($event.detail.value)"
+							><view class="m-choice">自定义时间</view></picker
+						></view
+					><view v-if="snoozed" class="m-sub">将在 {{ snoozed }} 再提醒你</view></view
+				></view
+			><button class="m-card m-menu-row m-plain" @tap="open('plant-detail', 'id=' + plant.id)">
+				<MIcon name="file" color="muted" :size="20" /><text>查看植物档案</text
+				><MIcon name="chevron" color="muted" :size="15" /></button
+		></template
+		><view v-else-if="loaded" class="m-card m-empty"
+			><view class="m-name">这株植物不在了</view
+			><view class="m-sub">可能已被删除或不再提醒</view></view
+		><view v-else class="m-note">加载中…</view></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { addCare, searchSpecies, LOCATION_NAMES } from "@/api/plant";
+import { snoozeReminder } from "@/api/message";
+import { useMaoyu, open, photo, dateKey, addDays } from "@/composables/maoyu";
+import { askSubscribe } from "@/utils/subscribe";
+const { plants, refresh, waterPlants } = useMaoyu();
+const plantId = ref(0),
+	kind = ref<"water" | "fertilize">("water"),
+	tips = ref(""),
+	busy = ref(false),
+	loaded = ref(false),
+	snoozed = ref("");
+const plant = computed(() => plants.value.find((p) => p.id === plantId.value));
+const done = computed(() =>
+	kind.value === "water"
+		? plant.value?.lastWaterDate?.slice(0, 10) === dateKey()
+		: plant.value?.lastFertilizeDate?.slice(0, 10) === dateKey()
+);
+const title = computed(() =>
+	kind.value === "water" ? `该给${plant.value?.name}浇水啦` : `该给${plant.value?.name}施肥啦`
+);
+const adviceTitle = computed(() =>
+	kind.value === "water" ? "先摸摸土壤，干了再浇" : "生长季薄肥勤施"
+);
+const advice = computed(
+	() =>
+		tips.value ||
+		(kind.value === "water"
+			? "用手指插入土壤约 2-3 厘米，感觉干燥后再浇水，避免积水导致烂根。"
+			: "按说明稀释后浇灌，休眠期和刚换盆时暂停施肥。")
+);
+async function finish() {
+	if (!plant.value || done.value) return;
+	if (kind.value === "water") {
+		await waterPlants([plant.value]);
+		return;
+	}
+	askSubscribe(["care"]);
+	busy.value = true;
+	try {
+		await addCare({ plantId: plant.value.id, type: 1 });
+		uni.showToast({ title: "已记录施肥", icon: "none" });
+		await refresh();
+	} catch (e) {
+		/* 请求层已提示 */
+	} finally {
+		busy.value = false;
+	}
+}
+async function snoozeTo(date: string) {
+	if (!plant.value) return;
+	busy.value = true;
+	try {
+		const res = await snoozeReminder("plant", plant.value.id, { date });
+		snoozed.value = res?.untilDate || date;
+	} catch (e) {
+		/* 请求层已提示 */
+	} finally {
+		busy.value = false;
+	}
+}
+function snooze(days: number) {
+	snoozeTo(addDays(dateKey(), days));
+}
+onLoad(async (o) => {
+	plantId.value = Number(o?.plantId || 0);
+	kind.value = o?.kind === "fertilize" ? "fertilize" : "water";
+	await refresh();
+	loaded.value = true;
+	const species = plant.value?.speciesName;
+	if (species) {
+		try {
+			const list = await searchSpecies(species);
+			tips.value = (list || []).find((s) => s.name === species)?.tips || "";
+		} catch (e) {
+			tips.value = "";
+		}
+	}
+});
+</script>
+<style scoped>
+.hero {
+	display: flex;
+	flex-direction: row;
+	gap: 14px;
+}
+.hero-photo {
+	width: 120px;
+	height: 170px;
+	border-radius: 12px;
+	flex-shrink: 0;
+}
+.name-tag {
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 4px;
+	background: #edf7f0;
+	color: #2f7d58;
+	border-radius: 12px;
+	padding: 2px 10px;
+	font-size: 12px;
+}
+.hero-title {
+	font-size: 19px;
+	font-weight: 700;
+	margin: 6px 0 2px;
+}
+.info {
+	font-size: 13px;
+	margin-top: 6px;
+}
+.label {
+	color: #8a918c;
+	margin-right: 8px;
+	font-size: 12px;
+}
+.advice {
+	display: flex;
+	flex-direction: row;
+	gap: 12px;
+	background: #f1f9f3;
+	border-radius: 12px;
+	padding: 14px;
+	margin-top: 10px;
+}
+.snooze {
+	border: 1px solid #e9ece6;
+	border-radius: 12px;
+	padding: 12px;
+	margin-top: 12px;
+}
+.snooze-title {
+	justify-content: center;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+</style>

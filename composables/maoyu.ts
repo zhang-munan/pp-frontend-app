@@ -3,7 +3,9 @@ import { useStore } from "@/.cool";
 import { myPets, healthList, type PetInfo, type PetHealth } from "@/api/pet";
 import { myPlants, water, undoWater, type PlantInfo } from "@/api/plant";
 import { today as getToday, type TodayResult } from "@/api/care";
+import { messageUnread } from "@/api/message";
 import { errorMessage } from "@/utils/error";
+import { askSubscribe, loadSubscribe } from "@/utils/subscribe";
 
 export const asset = (name: string) => "/static/maoyu/" + name;
 export function dateKey(date = new Date()) {
@@ -132,7 +134,7 @@ export function demoRecords(id = -1): PetHealth[] {
 }
 const pets = ref<PetInfo[]>([]),
 	plants = ref<PlantInfo[]>([]),
-	today = ref<TodayResult>({ date: "", water: [], health: [], total: 0 });
+	today = ref<TodayResult>({ date: "", water: [], health: [], fertilize: [], medication: [], checkin: [], total: 0 });
 const loading = ref(false),
 	error = ref(""),
 	selectedPet = ref(0),
@@ -140,7 +142,8 @@ const loading = ref(false),
 	lastOwner = ref(""),
 	pending = ref<number[]>([]),
 	undoIds = ref<number[]>([]),
-	undoMessage = ref("");
+	undoMessage = ref(""),
+	unread = ref(0);
 let inflight: Promise<void> | null = null;
 export function photo(item: any, kind = "plant") {
 	if (item?.avatar && /^(https?:|\/|data:|blob:|wxfile:)/.test(item.avatar))
@@ -148,7 +151,7 @@ export function photo(item: any, kind = "plant") {
 			? asset("cat-avatar.jpg")
 			: item.avatar;
 	return asset(
-		kind === "pet"
+		kind.startsWith("pet")
 			? "cat-hero.jpg"
 			: /绿萝/.test(item?.speciesName || "")
 				? "pothos.jpg"
@@ -187,12 +190,19 @@ export function useMaoyu() {
 			undoIds.value = [];
 			undoMessage.value = "";
 			error.value = "";
+			unread.value = 0;
 			lastOwner.value = owner;
 		}
 		if (guest.value) {
 			loading.value = false;
 			return;
 		}
+		messageUnread()
+			.then((u) => {
+				if (lastOwner.value === owner) unread.value = u?.total || 0;
+			})
+			.catch(() => {});
+		loadSubscribe();
 		if (inflight) return inflight;
 		loading.value = true;
 		error.value = "";
@@ -216,6 +226,7 @@ export function useMaoyu() {
 		if (!requireLogin()) return;
 		const targets = items.filter((p) => p.id > 0 && !pending.value.includes(p.id));
 		if (!targets.length) return;
+		askSubscribe(["care"]);
 		pending.value.push(...targets.map((p) => p.id));
 		let success: number[] = [];
 		for (const p of targets) {
@@ -265,10 +276,12 @@ export function useMaoyu() {
 		undo,
 		pending,
 		undoMessage,
+		unread,
 		user
 	};
 }
 export function waterText(p: PlantInfo) {
+	if (p.status) return p.status === 1 ? "已枯萎 · 不再提醒" : "已送人 · 不再提醒";
 	if (p.lastWaterDate?.slice(0, 10) === dateKey()) return "今天已浇水";
 	const d = daysFromToday(p.nextWaterDate);
 	return d === null
@@ -280,6 +293,7 @@ export function waterText(p: PlantInfo) {
 				: `${d} 天后浇水`;
 }
 export function isDue(p: PlantInfo) {
+	if (p.status) return false;
 	const d = daysFromToday(p.nextWaterDate);
 	return d !== null && d <= 0 && p.lastWaterDate?.slice(0, 10) !== dateKey();
 }

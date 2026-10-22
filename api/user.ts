@@ -196,10 +196,10 @@ export function updatePerson(data: Partial<UserInfo>) {
 }
 
 /**
- * 上传个人头像。OSS 对象存储路径：send/app/user/avatar/XXX.png。
+ * 上传个人头像。OSS 对象存储路径：maoyu/user/avatar/XXX.png。
  */
 export function uploadUserAvatar(filePath: string): Promise<string> {
-  return upload(filePath, { prefixPath: 'send/app/user/avatar' })
+  return upload(filePath, { prefixPath: 'maoyu/user/avatar' })
 }
 
 /** 注销账号 */

@@ -1,0 +1,379 @@
+<template>
+	<MPage :title="pageTitle" back>
+		<view v-if="loading" class="m-note">正在加载…</view>
+		<view v-else-if="error" class="m-error" @tap="load">{{ error }} · 点击重试</view>
+		<template v-else-if="identify"
+			><view class="m-card hero"
+				><image class="hero-photo" :src="image || asset('monstera.jpg')" mode="aspectFill" /><view class="m-grow"
+					><template v-if="identify.confident"
+						><view class="m-heading">{{ identify.name }}</view
+						><view v-if="identify.species?.scientificName" class="sci">{{ identify.species.scientificName }}</view
+						><view class="tag">匹配度 {{ Math.round(identify.confidence * 100) }}%</view
+						><view class="hero-copy">{{ identify.description }}</view></template
+					><template v-else
+						><view class="m-row"
+							><view class="leaf-badge"><MIcon name="leaf" :size="18" /></view
+							><view class="m-heading">这次还不能确定品种</view></view
+						><view class="hero-copy"
+							>照片中的特征比较相似，暂时不能准确识别出具体品种。可以从下面的选项中进一步确认，或换一张更清晰的照片。</view
+						></template
+					></view
+				></view
+			>
+			<view v-if="identify.confident && identify.species" class="m-card"
+				><view class="m-heading">养护参数</view
+				><view class="params"
+					><view class="param"
+						><MIcon name="water" :size="20" /><text class="m-name">每 {{ identify.species.waterCycleDays }} 天</text
+						><text class="m-sub">浇水</text></view
+					><view class="param"
+						><MIcon name="leaf" color="amber" :size="20" /><text class="m-name">{{
+							identify.species.fertilizeCycleDays ? "每 " + identify.species.fertilizeCycleDays + " 天" : "少量"
+						}}</text
+						><text class="m-sub">施肥</text></view
+					><view class="param"
+						><MIcon name="sun" color="amber" :size="20" /><text class="m-name">{{
+							LIGHT_NAMES[identify.species.light] || "散射光"
+						}}</text
+						><text class="m-sub">光照</text></view
+					><view class="param"
+						><MIcon name="check" :size="20" /><text class="m-name">{{
+							DIFFICULTY_NAMES[identify.species.difficulty] || "一般"
+						}}</text
+						><text class="m-sub">难度</text></view
+					></view
+				><view class="m-sub tips">{{ identify.species.tips || identify.tips }}</view></view
+			>
+			<view v-else-if="identify.confident && identify.tips" class="m-card"
+				><view class="m-heading">养护要点</view><view class="hero-copy">{{ identify.tips }}</view></view
+			>
+			<view v-if="candidates.length" class="m-card"
+				><view class="m-heading">{{ identify.confident ? "也可能是" : "可能是以下品种" }}</view
+				><view class="candidates"
+					><button v-for="c in candidates" :key="c.name" class="m-plain candidate" @tap="createFrom(c.name)">
+						<view class="m-row"
+							><text class="m-name">{{ c.name }}</text><text class="tag">可能是</text></view
+						><view class="m-sub">{{ c.reason || "点击用这个品种建档" }}</view></button
+					></view
+				></view
+			>
+			<view v-if="!identify.confident" class="m-card"
+				><view class="m-row"><MIcon name="sun" color="amber" /><text class="m-name">拍照小提示</text></view
+				><view class="m-sub tip-line">✓ 在光线充足的环境下拍摄</view
+				><view class="m-sub tip-line">✓ 尽量拍清楚叶片的形状、纹理和颜色</view
+				><view class="m-sub tip-line">✓ 宠物尽量拍正脸和全身</view></view
+			>
+			<view class="m-note">{{ disclaimer }}</view>
+			<template v-if="identify.confident"
+				><button class="m-button full" @tap="createFrom(identify.name)">
+					<MIcon name="plus" color="white" :size="18" />一键建档
+				</button
+				><view class="m-row actions"
+					><button
+						v-if="identify.kind === 'plant'"
+						class="m-button outline m-grow"
+						@tap="open('plant-guide', 'name=' + encodeURIComponent(identify.species?.name || identify.name))"
+					>
+						养护攻略</button
+					><button class="m-button outline m-grow" @tap="followUp">继续追问</button></view
+				></template
+			><template v-else
+				><button class="m-button full" @tap="retake">
+					<MIcon name="camera" color="white" :size="18" />重拍一张</button
+				><button class="m-button full outline" @tap="open('plant-form', 'mode=search')">
+					<MIcon name="search" :size="18" />搜索品种</button
+				><button class="m-button full outline" @tap="open('plant-form')">
+					<MIcon name="edit" :size="18" />手动填写
+				</button></template
+			></template
+		>
+		<template v-else-if="analysis"
+			><view class="m-card hero"
+				><image class="hero-photo" :src="image || photo(target, target?.type === 1 ? 'pet' : 'plant')" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="m-heading">{{ heading }}</view
+					><view v-if="target?.sub" class="m-sub">{{ target.sub }}</view
+					><view class="urgency" :class="'u' + analysis.urgency">{{ URGENCY[analysis.urgency] }}</view
+					><view class="quote">{{ analysis.summary }}</view></view
+				></view
+			>
+			<view v-if="analysis.causes.length" class="m-card"
+				><view class="m-heading">可能原因</view
+				><view v-for="c in analysis.causes" :key="c.title" class="m-row item"
+					><view class="item-icon"><MIcon :name="c.icon || 'leaf'" :size="22" /></view
+					><view class="m-grow"
+						><view class="m-name">{{ c.title }}</view><view class="m-sub">{{ c.content }}</view></view
+					></view
+				></view
+			>
+			<view v-if="analysis.observe.length" class="m-card"
+				><view class="m-heading">建议观察</view
+				><view v-for="o in analysis.observe" :key="o.title" class="m-row item outline"
+					><view class="item-icon"><MIcon name="search" :size="20" /></view
+					><view class="m-grow"
+						><view class="m-name">{{ o.title }}</view><view class="m-sub">{{ o.content }}</view></view
+					></view
+				></view
+			>
+			<view v-if="analysis.steps.length" class="m-card"
+				><view class="m-heading">护理步骤</view
+				><view v-for="(s, i) in analysis.steps" :key="s.title" class="m-row item outline"
+					><view class="step-no">{{ i + 1 }}</view
+					><view class="m-grow"
+						><view class="m-name">{{ s.title }}</view><view class="m-sub">{{ s.content }}</view></view
+					></view
+				></view
+			>
+			<view class="disclaimer m-row"
+				><MIcon name="help" color="amber" :size="22" /><text class="m-grow">{{ disclaimer }}</text></view
+			>
+			<view class="m-row actions"
+				><button class="m-button outline m-grow" @tap="followUp">继续追问</button
+				><button class="m-button m-grow" @tap="recordObservation">记录观察</button></view
+			></template
+		>
+		<view v-else class="m-card m-empty">这条咨询没有结构化结果<button class="m-button full" @tap="followUp">查看对话</button></view>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { aiDetail, type AiAnalysis, type AiIdentify, type AiTarget, type AiConversation } from "@/api/ai";
+import { LIGHT_NAMES, DIFFICULTY_NAMES } from "@/api/plant";
+import { open, asset, photo } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const URGENCY = ["可先居家观察", "建议尽快处理", "请尽快就医"];
+const id = ref(0),
+	conversation = ref<AiConversation | null>(null),
+	target = ref<AiTarget | null>(null),
+	analysis = ref<AiAnalysis | null>(null),
+	identify = ref<AiIdentify | null>(null),
+	image = ref(""),
+	disclaimer = ref(""),
+	loading = ref(false),
+	error = ref("");
+const pageTitle = computed(() =>
+	identify.value ? (identify.value.confident ? "识别结果" : "识别不确定") : "分析结果"
+);
+const heading = computed(() => {
+	const title = analysis.value?.title || conversation.value?.title || "分析结果";
+	return target.value?.name && !title.includes(target.value.name) ? `${target.value.name} · ${title}` : title;
+});
+const candidates = computed(() => identify.value?.candidates || []);
+async function load() {
+	loading.value = true;
+	error.value = "";
+	try {
+		const d = await aiDetail(id.value);
+		conversation.value = d.conversation;
+		target.value = d.target;
+		disclaimer.value = d.disclaimer;
+		const index = d.messages.findIndex((m) => m.role === 1 && m.structured);
+		const reply = index >= 0 ? d.messages[index] : null;
+		image.value = d.messages.slice(0, index + 1).reverse().find((m) => m.image)?.image || d.conversation.cover || "";
+		if (reply && d.conversation.mode === 3) identify.value = reply.structured as AiIdentify;
+		else if (reply) analysis.value = reply.structured as AiAnalysis;
+	} catch (e) {
+		error.value = errorMessage(e);
+	} finally {
+		loading.value = false;
+	}
+}
+function followUp() {
+	const pages = getCurrentPages();
+	const prev: any = pages[pages.length - 2];
+	if (prev?.route === "package-user/ask") uni.navigateBack();
+	else uni.redirectTo({ url: "/package-user/ask?id=" + id.value });
+}
+function retake() {
+	uni.redirectTo({ url: "/package-user/ask?mode=identify" });
+}
+function createFrom(name: string) {
+	const r = identify.value;
+	if (!r) return;
+	const photoParam = image.value ? "&photo=" + encodeURIComponent(image.value) : "";
+	if (r.kind === "pet") {
+		open("pet-form", `species=${r.petSpecies ?? 7}&breed=${encodeURIComponent(name)}${photoParam}`);
+		return;
+	}
+	const s = name === r.name ? r.species : null;
+	const params = [`species=${encodeURIComponent(s?.name || name)}`];
+	if (s?.waterCycleDays) params.push("cycle=" + s.waterCycleDays);
+	if (s && s.fertilizeCycleDays !== undefined) params.push("fertilize=" + s.fertilizeCycleDays);
+	open("plant-form", params.join("&") + photoParam);
+}
+function recordObservation() {
+	const t = target.value;
+	const kind = conversation.value?.kind;
+	if (t?.type === 1) open("health-form", `petId=${t.id}&type=5`);
+	else if (t?.type === 2) open("plant-care-form", `plantId=${t.id}&type=4`);
+	else if (kind === 1) uni.switchTab({ url: "/pages/pet" });
+	else uni.switchTab({ url: "/pages/plant" });
+}
+onLoad((opts) => {
+	id.value = Number(opts?.id || 0);
+	load();
+});
+</script>
+<style scoped>
+.hero {
+	display: flex;
+	flex-direction: row;
+	gap: 14px;
+	padding: 10px;
+}
+.hero-photo {
+	width: 44%;
+	height: 190px;
+	border-radius: 14px;
+	flex-shrink: 0;
+}
+.hero-copy {
+	font-size: 13px;
+	line-height: 1.7;
+	color: #55605a;
+	margin-top: 8px;
+}
+.sci {
+	font-size: 12px;
+	font-style: italic;
+	color: #88918a;
+}
+.tag {
+	display: inline-block;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: #eaf6ef;
+	color: #329e6b;
+	margin: 4px 0 0 6px;
+}
+.leaf-badge {
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	background: #eaf6ef;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 6px;
+}
+.params {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+	margin: 12px 0;
+}
+.param {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	background: #f6f8f4;
+	border-radius: 12px;
+	padding: 10px 4px;
+}
+.param .m-name {
+	font-size: 13px;
+}
+.tips {
+	line-height: 1.7;
+}
+.candidates {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+	margin-top: 10px;
+}
+.candidate {
+	flex-direction: column;
+	align-items: flex-start;
+	text-align: left;
+	border: 1px solid #edf0ea;
+	border-radius: 12px;
+	padding: 10px;
+	gap: 4px;
+}
+.tip-line {
+	margin-top: 8px;
+}
+.urgency {
+	display: inline-block;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	margin: 6px 0;
+}
+.u0 {
+	background: #eaf6ef;
+	color: #329e6b;
+}
+.u1 {
+	background: #fdf3df;
+	color: #b7791f;
+}
+.u2 {
+	background: #fde8e7;
+	color: #d9534f;
+}
+.quote {
+	background: #f1f8f2;
+	border-radius: 12px;
+	padding: 10px;
+	font-size: 13px;
+	line-height: 1.7;
+	color: #33453a;
+}
+.item {
+	gap: 12px;
+	background: #f6f8f4;
+	border-radius: 12px;
+	padding: 12px;
+	margin-top: 10px;
+	align-items: flex-start;
+}
+.item.outline {
+	background: #fff;
+	border: 1px solid #edf0ea;
+}
+.item-icon {
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	background: #eaf6ef;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.step-no {
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	background: #48aa7b;
+	color: #fff;
+	font-weight: 600;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.disclaimer {
+	gap: 10px;
+	background: #fdf6e7;
+	border-radius: 12px;
+	padding: 12px;
+	font-size: 12px;
+	line-height: 1.6;
+	color: #8a6d3b;
+	margin: 12px 0;
+}
+.actions {
+	gap: 12px;
+	margin-top: 10px;
+}
+</style>

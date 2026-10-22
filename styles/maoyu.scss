@@ -439,3 +439,56 @@ button::after,
 	white-space: nowrap;
 	text-overflow: ellipsis;
 }
+
+/* Plus 专属皮肤：只覆盖主色与页面底色 */
+.m-page.theme-amber {
+	background: #fffaf0;
+}
+.theme-amber .m-button {
+	background: #e3a33a;
+	border-color: #e3a33a;
+}
+.theme-amber .m-button.outline {
+	background: #fff;
+	color: #b97a12;
+	border-color: #e3a33a;
+}
+.theme-amber .m-button.soft {
+	background: #fbf0da;
+	color: #b97a12;
+	border-color: transparent;
+}
+.theme-amber .m-green,
+.theme-amber .m-choice.selected {
+	color: #b97a12;
+}
+.theme-amber .m-choice.selected {
+	border-color: #e3a33a;
+	background: #fdf3df;
+}
+.m-page.theme-night {
+	background: #f1f5f2;
+}
+.theme-night .m-button {
+	background: #1f5a43;
+	border-color: #1f5a43;
+}
+.theme-night .m-button.outline {
+	background: #fff;
+	color: #1f5a43;
+	border-color: #1f5a43;
+}
+.theme-night .m-button.soft {
+	background: #e2ece6;
+	color: #1f5a43;
+	border-color: transparent;
+}
+.theme-night .m-green,
+.theme-night .m-title {
+	color: #1f5a43;
+}
+.theme-night .m-choice.selected {
+	color: #1f5a43;
+	border-color: #1f5a43;
+	background: #e2ece6;
+}

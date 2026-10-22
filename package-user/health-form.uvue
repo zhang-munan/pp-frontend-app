@@ -6,181 +6,539 @@
 				>{{ pet.name }}</text
 			><text v-if="petId < 0" class="m-sub">示例档案</text></view
 		>
-		<view class="m-card"
-			><text class="m-label">{{
-				type === 2
-					? "体重（kg）"
-					: type === 0
-						? "疫苗类型"
-						: type === 1
-							? "驱虫类型"
-							: type === 5
-								? "今天记录什么"
-								: "记录内容"
-			}}</text
-			><view v-if="presets.length" class="m-choices"
-				><button
-					v-for="item in presets"
-					:key="item"
-					class="m-choice"
-					:class="{ selected: (type === 1 ? form.subType : form.itemName) === item }"
-					@tap="pick(item)"
-				>
-					{{ item }}
-				</button></view
+		<view v-if="type === 2" class="m-card"
+			><text class="m-label">体重（kg）</text
 			><input
-				v-if="type === 2"
 				type="digit"
 				class="m-input weight-input"
 				placeholder="0.0"
-				v-model="form.value" /><input
-				v-else
-				class="m-input record-input"
-				:placeholder="
-					type === 1
-						? '药品品牌 / 名称'
-						: type === 3
-							? '药名、剂量、频次与疗程'
-							: type === 4
-								? '医院 / 诊断'
-								: '名称或自定义内容'
-				"
-				v-model="form.itemName"
-				maxlength="100"
+				v-model="form.value"
 		/></view>
-		<view class="m-card"
-			><text class="m-label">{{ type === 0 ? "接种日期" : "记录日期" }}</text
-			><picker
-				mode="date"
-				:end="dateKey()"
-				:value="form.occurDate"
-				@change="setDate($event.detail.value)"
-				><view class="m-input m-between"
-					>{{ form.occurDate
-					}}<MIcon name="calendar" color="muted" :size="20" /></view></picker
-		></view>
-		<view v-if="type === 0 || type === 1" class="m-card"
-			><text class="m-label">下次{{ type === 0 ? "接种" : "驱虫" }}</text
-			><picker
-				mode="date"
-				:start="addDays(form.occurDate, 1)"
-				:value="form.nextDate"
-				@change="form.nextDate = $event.detail.value"
-				><view class="m-input m-between"
-					>{{ form.nextDate }}<text class="m-green">修改</text></view
-				></picker
-			><view class="m-sub m-section">{{
-				type === 1
-					? "体内默认 90 天，体外默认 30 天，可自行调整。"
-					: "按兽医建议调整接种安排。"
-			}}</view></view
+		<view v-if="type === 0" class="m-card"
+			><text class="m-label">疫苗类型</text
+			><view class="m-choices"
+				><button
+					v-for="v in presets.vaccine"
+					:key="v.name"
+					class="m-choice"
+					:class="{ selected: !custom && form.itemName === v.name }"
+					@tap="pickVaccine(v)"
+				>
+					{{ v.name }}</button
+				><button class="m-choice" :class="{ selected: custom }" @tap="customName">
+					自定义
+				</button></view
+			><input
+				v-if="custom || !presets.vaccine.length"
+				class="m-input record-input"
+				placeholder="疫苗名称"
+				maxlength="100"
+				v-model="form.itemName"
+		/></view>
+		<view v-if="type === 1" class="m-card"
+			><view class="m-between"
+				><text class="m-label">驱虫类型</text
+				><view class="m-choices"
+					><button
+						v-for="d in presets.deworm"
+						:key="d.subType"
+						class="m-choice"
+						:class="{ selected: form.subType === d.subType }"
+						@tap="pickDeworm(d)"
+					>
+						{{ d.subType }}
+					</button></view
+				></view
+			><text class="m-label m-section">品牌</text
+			><view class="m-choices"
+				><button
+					v-for="b in presets.dewormBrands"
+					:key="b"
+					class="m-choice"
+					:class="{ selected: form.itemName === b }"
+					@tap="form.itemName = b"
+				>
+					{{ b }}
+				</button></view
+			><input
+				class="m-input record-input"
+				placeholder="其他品牌 / 药名"
+				maxlength="100"
+				v-model="form.itemName" /><text class="m-label m-section">用量</text
+			><input
+				class="m-input"
+				placeholder="按实际用量填写"
+				maxlength="50"
+				v-model="form.dosage"
+		/></view>
+		<template v-if="type === 3"
+			><view class="m-card"
+				><text class="m-label">药品名称</text
+				><input
+					class="m-input"
+					placeholder="按处方填写"
+					maxlength="100"
+					v-model="form.itemName" /><text class="m-label m-section">每次剂量</text
+				><input
+					class="m-input"
+					placeholder="按医嘱填写"
+					maxlength="50"
+					v-model="form.dosage" /></view
+			><view class="m-card"
+				><text class="m-label">服用频率</text
+				><view class="m-choices"
+					><button
+						v-for="f in presets.medicationFrequencies"
+						:key="f.name"
+						class="m-choice"
+						:class="{ selected: frequency === f.name }"
+						@tap="form.doseTimes = [...f.times]"
+					>
+						{{ f.name }}</button
+					><button class="m-choice" :class="{ selected: frequency === '自定义' }">
+						自定义
+					</button></view
+				><text class="m-label m-section">服用时间</text
+				><view class="time-list"
+					><view v-for="(t, i) in form.doseTimes" :key="t" class="time-chip"
+						><picker mode="time" :value="t" @change="setTime(i, $event.detail.value)"
+							><view class="m-row"
+								><MIcon name="clock" :size="16" /><text>{{ t }}</text></view
+							></picker
+						><button class="m-plain" @tap="removeTime(i)">
+							<MIcon name="close" color="muted" :size="14" /></button></view
+					><picker
+						v-if="form.doseTimes.length < 8"
+						mode="time"
+						value="12:00"
+						@change="addTime($event.detail.value)"
+						><view class="time-chip add">＋ 添加时间</view></picker
+					></view
+				><text class="m-label m-section">用药时段</text
+				><view class="m-row period-row"
+					><picker
+						class="m-grow"
+						mode="date"
+						:end="addDays(dateKey(), 30)"
+						:value="form.occurDate"
+						@change="setDate($event.detail.value)"
+						><view class="m-input">{{ form.occurDate }}</view></picker
+					><text class="m-sub">—</text
+					><picker
+						class="m-grow"
+						mode="date"
+						:start="form.occurDate"
+						:end="addDays(form.occurDate, 365)"
+						:value="form.endDate"
+						@change="form.endDate = $event.detail.value"
+						><view class="m-input">{{ form.endDate }}</view></picker
+					></view
+				><view class="m-sub m-section">共 {{ courseDays }} 天</view></view
+			></template
+		>
+		<view v-if="type === 4" class="m-card"
+			><text class="m-label">医院</text
+			><input
+				class="m-input"
+				placeholder="请输入医院"
+				maxlength="100"
+				v-model="form.hospital" /><text class="m-label m-section">诊断/情况</text
+			><textarea
+				class="m-input m-textarea"
+				maxlength="300"
+				placeholder="请简单记录本次就诊的诊断、情况或医生建议…"
+				v-model="form.diagnosis" /><text class="m-label m-section">费用（可选）</text
+			><input
+				type="digit"
+				class="m-input"
+				placeholder="请输入费用金额（元）"
+				v-model="form.cost"
+		/></view>
+		<view v-if="type === 5" class="m-card"
+			><text class="m-label">选择打卡事项</text
+			><view class="daily-grid"
+				><button
+					v-for="item in presets.daily"
+					:key="item"
+					class="daily-item m-plain"
+					:class="{ selected: !custom && form.itemName === item }"
+					@tap="pickDaily(item)"
+				>
+					<text class="daily-symbol">{{ DAILY_SYMBOLS[item] || "🐾" }}</text
+					><text>{{ item }}</text></button
+				><button
+					class="daily-item m-plain"
+					:class="{ selected: custom }"
+					@tap="customName"
+				>
+					<text class="daily-symbol">✏️</text><text>自定义</text>
+				</button></view
+			><input
+				v-if="custom"
+				class="m-input record-input"
+				placeholder="今天记录什么"
+				maxlength="100"
+				v-model="form.itemName"
+		/></view>
+		<view v-if="type !== 3" class="m-card"
+			><text class="m-label">{{ dateLabel }}</text
+			><view class="m-row date-row"
+				><picker
+					class="m-grow"
+					mode="date"
+					:end="dateKey()"
+					:value="form.occurDate"
+					@change="setDate($event.detail.value)"
+					><view class="m-input m-between"
+						>{{ form.occurDate }}<MIcon name="calendar" color="muted" :size="20" /></view></picker
+				><picker
+					v-if="type === 5"
+					mode="time"
+					:value="form.occurTime"
+					@change="form.occurTime = $event.detail.value"
+					><view class="m-input time-input"
+						><MIcon name="clock" color="muted" :size="18" />{{ form.occurTime }}</view
+					></picker
+				></view
+			><template v-if="type === 0 || type === 1"
+				><text class="m-label m-section">下次{{ type === 0 ? "接种" : "驱虫" }}</text
+				><picker
+					mode="date"
+					:start="addDays(form.occurDate, 1)"
+					:value="form.nextDate"
+					@change="form.nextDate = $event.detail.value"
+					><view class="m-input m-between"
+						>{{ nextLabel }} · {{ form.nextDate }}<text class="m-green">修改</text></view
+					></picker
+				></template
+			></view
+		>
+		<view v-if="[0, 1, 3].includes(type)" class="m-card m-between"
+			><view
+				><view class="m-name">{{ type === 3 ? "用药提醒" : "提醒" }}</view
+				><view class="m-sub">{{
+					type === 3 ? "到点提醒我，避免漏服" : "到期前与当天发送提醒"
+				}}</view></view
+			><switch
+				:checked="form.remind === 1"
+				color="#48aa7b"
+				@change="form.remind = $event.detail.value ? 1 : 0"
+		/></view>
+		<view v-if="type === 4 || type === 5 || photos.length" class="m-card"
+			><text class="m-label">{{ type === 4 ? "处方照片（可选）" : "照片（可选）" }}</text
+			><view class="photo-grid"
+				><view v-for="(p, i) in photos" :key="p.src" class="photo-item"
+					><image :src="p.src" mode="aspectFill" @tap="preview(i)" /><button
+						class="m-plain photo-remove"
+						@tap="photos.splice(i, 1)"
+					>
+						<MIcon name="close" color="white" :size="12" /></button></view
+				><button v-if="photos.length < 9" class="photo-add m-plain" @tap="choosePhotos">
+					<MIcon name="camera" color="muted" :size="24" /><text class="m-sub"
+						>添加照片</text
+					>
+				</button></view
+			><view v-if="type === 4" class="m-sub m-section"
+				>可上传处方单、检查报告等照片</view
+			></view
 		>
 		<view class="m-card"
-			><text class="m-label">{{
-				type === 4 ? "诊断、费用与处方备注" : "更多信息（选填）"
-			}}</text
+			><template v-if="type === 0"
+				><text class="m-label">接种医院（选填）</text
+				><input
+					class="m-input record-input"
+					placeholder="例如：城南动物医院"
+					maxlength="100"
+					v-model="form.hospital" /></template
+			><text class="m-label" :class="{ 'm-section': type === 0 }">备注（选填）</text
 			><textarea
 				class="m-input m-textarea"
 				maxlength="500"
-				placeholder="记录这次照顾的小细节…"
+				:placeholder="type === 5 ? '记录一下今天的情况吧…' : '记录这次照顾的小细节…'"
 				v-model="form.remark"
-			/></view
-		><view v-if="type === 3" class="m-note">请按兽医处方填写用药信息，不自行推算剂量。</view
-		><view v-if="message" class="m-error-text">{{ message }}</view
-		><button class="m-button full" :disabled="saving" @tap="save">
-			{{ saving ? "正在保存…" : "保存记录" }}
-		</button>
+		/></view>
+		<view v-if="type === 3" class="m-note">请按兽医处方设置，不自行增减药量。</view
+		><view v-if="type === 1" class="m-note">用量以兽医指导或产品说明为准。</view
+		><view v-if="message" class="m-error-text">{{ message }}</view>
+		<template v-if="done"
+			><view class="done-bar m-row"
+				><MIcon name="check" :size="18" /><text class="m-grow">记录好了</text
+				><button class="m-plain m-link" @tap="undoCheckin">撤销</button></view
+			><button class="m-button full" @tap="back">完成</button></template
+		><template v-else
+			><button class="m-button full" :disabled="saving" @tap="save">
+				{{ saving ? "正在保存…" : saveText }}</button
+			><button v-if="editing" class="m-button outline full delete-btn" @tap="remove">
+				删除这条记录
+			</button></template
+		>
 	</MPage>
 </template>
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-import { addHealthRecord, HEALTH_TYPE_NAMES } from "@/api/pet";
-import { useMaoyu, photo, dateKey, addDays, requireLogin, open } from "@/composables/maoyu";
+import { upload } from "@/.cool";
+import {
+	addHealthRecord,
+	updateHealthRecord,
+	removeHealthRecord,
+	healthDetail,
+	healthPresets,
+	checkin,
+	HEALTH_TYPE_NAMES,
+	type HealthPresets,
+	type PetHealth
+} from "@/api/pet";
+import { useMaoyu, photo, dateKey, addDays, requireLogin } from "@/composables/maoyu";
 import { errorMessage } from "@/utils/error";
+import { askSubscribe } from "@/utils/subscribe";
+
+const FALLBACK: HealthPresets = {
+	vaccine: [],
+	deworm: [
+		{ name: "体内驱虫", subType: "体内", cycleDays: 90, unit: "口服" },
+		{ name: "体外驱虫", subType: "体外", cycleDays: 30, unit: "滴剂" }
+	],
+	dewormBrands: [],
+	daily: ["喂食", "洗澡", "美容", "剪指甲", "陪伴"],
+	medicationFrequencies: [
+		{ name: "每日1次", times: ["09:00"] },
+		{ name: "每日2次", times: ["09:00", "21:00"] }
+	]
+};
+const DATE_LABELS: Record<number, string> = { 0: "接种日期", 4: "就诊日期", 5: "打卡时间" };
+const DAILY_SYMBOLS: Record<string, string> = {
+	喂食: "🍚",
+	洗澡: "🛁",
+	美容: "✂️",
+	剪指甲: "💅",
+	遛狗: "🦮",
+	陪伴: "🧡",
+	铲屎: "🧹"
+};
 const { visiblePets, refresh } = useMaoyu(),
 	petId = ref(0),
 	type = ref(2),
+	recordId = ref(0),
 	saving = ref(false),
-	message = ref("");
-const form = ref({
-	itemName: "",
-	subType: "体外",
-	value: "",
-	occurDate: dateKey(),
-	nextDate: addDays(dateKey(), 365),
-	remark: ""
-});
+	message = ref(""),
+	presets = ref<HealthPresets>(FALLBACK),
+	custom = ref(false),
+	cycle = ref(365),
+	photos = ref<{ src: string; remote: string }[]>([]),
+	done = ref(0);
+
+const pad = (n: number) => (n < 10 ? "0" : "") + n;
+function clock() {
+	const d = new Date();
+	return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function between(a: string, b: string) {
+	return Math.round((Date.parse(b + "T12:00:00") - Date.parse(a + "T12:00:00")) / 86400000);
+}
+function blank() {
+	return {
+		itemName: "",
+		subType: "体外",
+		value: "",
+		occurDate: dateKey(),
+		occurTime: clock(),
+		nextDate: addDays(dateKey(), 365),
+		endDate: addDays(dateKey(), 6),
+		doseTimes: ["09:00", "21:00"] as string[],
+		dosage: "",
+		hospital: "",
+		diagnosis: "",
+		cost: "",
+		remind: 1,
+		remark: ""
+	};
+}
+const form = ref(blank());
 const pet = computed(() => visiblePets.value.find((p) => p.id === petId.value)),
-	title = computed(() =>
-		type.value === 2 ? "记录体重" : "新增" + HEALTH_TYPE_NAMES[type.value]
-	);
-const presets = computed(() =>
-	type.value === 0
-		? [pet.value?.species === 1 ? "卫佳伍" : "猫三联", "狂犬", "自定义"]
-		: type.value === 1
-			? ["体外", "体内"]
-			: type.value === 5
-				? ["喂食", "洗澡", "美容", "剪指甲", ...(pet.value?.species === 1 ? ["遛狗"] : [])]
-				: []
-);
+	editing = computed(() => recordId.value > 0),
+	title = computed(() => {
+		const t = type.value;
+		if (editing.value) return t === 3 ? "编辑用药计划" : "编辑" + HEALTH_TYPE_NAMES[t] + "记录";
+		return ["新增疫苗", "记录驱虫", "记录体重", "用药计划", "就医记录", "日常打卡"][t];
+	}),
+	saveText = computed(() =>
+		type.value === 5 && !editing.value
+			? "完成打卡"
+			: type.value === 3
+				? "保存计划"
+				: type.value === 0 && !editing.value
+					? "保存并设置提醒"
+					: "保存记录"
+	),
+	dateLabel = computed(() => DATE_LABELS[type.value] || "日期"),
+	frequency = computed(
+		() =>
+			presets.value.medicationFrequencies.find(
+				(f) => f.times.join() === form.value.doseTimes.join()
+			)?.name || "自定义"
+	),
+	courseDays = computed(() => Math.max(1, between(form.value.occurDate, form.value.endDate) + 1)),
+	nextLabel = computed(() => {
+		const d = between(form.value.occurDate, form.value.nextDate);
+		return d >= 360 ? `${Math.round(d / 365)}年后` : d >= 28 ? `${Math.round(d / 30)}个月后` : `${d}天后`;
+	});
+
 const key = () => `maoyu_health_draft_${petId.value}_${type.value}`;
-watch(form, (v) => uni.setStorageSync(key(), v), { deep: true });
-function pick(s: string) {
-	if (type.value === 1) {
-		form.value.subType = s;
-		form.value.nextDate = addDays(form.value.occurDate, s === "体内" ? 90 : 30);
-	} else form.value.itemName = s === "自定义" ? "" : s;
+watch(
+	form,
+	(v) => {
+		if (!editing.value && !done.value) uni.setStorageSync(key(), v);
+	},
+	{ deep: true }
+);
+
+function pickVaccine(v: { name: string; cycleDays: number }) {
+	custom.value = false;
+	form.value.itemName = v.name;
+	cycle.value = v.cycleDays;
+	form.value.nextDate = addDays(form.value.occurDate, v.cycleDays);
+}
+function pickDeworm(d: { subType: string; cycleDays: number }) {
+	form.value.subType = d.subType;
+	cycle.value = d.cycleDays;
+	form.value.nextDate = addDays(form.value.occurDate, d.cycleDays);
+}
+function pickDaily(item: string) {
+	custom.value = false;
+	form.value.itemName = item;
+}
+function customName() {
+	custom.value = true;
+	form.value.itemName = "";
 }
 function setDate(s: string) {
 	form.value.occurDate = s;
-	form.value.nextDate = addDays(
-		s,
-		type.value === 0 ? 365 : form.value.subType === "体内" ? 90 : 30
-	);
+	if (type.value === 0 || type.value === 1) form.value.nextDate = addDays(s, cycle.value);
+	if (type.value === 3 && form.value.endDate < s) form.value.endDate = s;
+}
+function addTime(t: string) {
+	if (!form.value.doseTimes.includes(t)) form.value.doseTimes = [...form.value.doseTimes, t].sort();
+}
+function setTime(i: number, t: string) {
+	const list = form.value.doseTimes.filter((_, j) => j !== i);
+	if (!list.includes(t)) list.push(t);
+	form.value.doseTimes = list.sort();
+}
+function removeTime(i: number) {
+	form.value.doseTimes = form.value.doseTimes.filter((_, j) => j !== i);
+}
+function choosePhotos() {
+	uni.chooseImage({
+		count: 9 - photos.value.length,
+		sizeType: ["compressed"],
+		success: (r) => {
+			const paths = (r.tempFilePaths || []) as string[];
+			photos.value.push(...paths.map((src) => ({ src, remote: "" })));
+		}
+	});
+}
+function preview(i: number) {
+	uni.previewImage({ urls: photos.value.map((p) => p.src), current: i });
+}
+async function uploadPhotos() {
+	for (const p of photos.value) {
+		if (!p.remote) p.remote = await upload(p.src, { prefixPath: "maoyu/health" });
+	}
+	return photos.value.map((p) => p.remote);
+}
+
+function validate() {
+	const f = form.value,
+		t = type.value;
+	if (t === 2) {
+		const v = Number(f.value);
+		if (!Number.isFinite(v) || v <= 0 || v > 1000) return "请填写有效体重（大于 0，单位 kg）";
+	}
+	if ([0, 3, 5].includes(t) && !f.itemName.trim())
+		return t === 5 ? "请选择打卡事项" : t === 3 ? "请填写药品名称" : "请选择或填写疫苗名称";
+	if ((t === 0 || t === 1) && between(f.occurDate, f.nextDate) < 1) return "下次日期应晚于本次日期";
+	if (t === 3) {
+		if (!f.doseTimes.length) return "请至少设置一个服用时间";
+		if (f.endDate < f.occurDate) return "结束日期不能早于开始日期";
+	}
+	if (t === 4) {
+		if (!f.hospital.trim() && !f.diagnosis.trim()) return "请填写医院或诊断情况";
+		if (f.cost !== "" && !(Number(f.cost) >= 0)) return "请填写有效的费用";
+	}
+	return "";
+}
+function payload(attachments: string[]) {
+	const f = form.value,
+		t = type.value;
+	const data: Record<string, any> = {
+		petId: petId.value,
+		type: t,
+		itemName: f.itemName.trim(),
+		occurDate: f.occurDate,
+		remark: f.remark.trim(),
+		attachments
+	};
+	if (t === 2) Object.assign(data, { itemName: "体重记录", value: Number(f.value), unit: "kg" });
+	if (t === 0 || t === 1)
+		Object.assign(data, {
+			cycleDays: between(f.occurDate, f.nextDate),
+			remind: f.remind,
+			hospital: f.hospital.trim()
+		});
+	if (t === 1)
+		Object.assign(data, {
+			subType: f.subType,
+			dosage: f.dosage.trim(),
+			itemName: f.itemName.trim() || f.subType + "驱虫"
+		});
+	if (t === 3)
+		Object.assign(data, {
+			dosage: f.dosage.trim(),
+			doseTimes: f.doseTimes,
+			endDate: f.endDate,
+			remind: f.remind
+		});
+	if (t === 4)
+		Object.assign(data, {
+			itemName: f.hospital.trim() || "就医记录",
+			hospital: f.hospital.trim(),
+			diagnosis: f.diagnosis.trim(),
+			cost: f.cost === "" ? null : Number(f.cost)
+		});
+	if (t === 5) data.occurTime = f.occurTime;
+	return data;
 }
 async function save() {
 	if (saving.value) return;
-	message.value = "";
-	const value = Number(form.value.value);
-	if (type.value === 2 && (!Number.isFinite(value) || value <= 0 || value > 1000)) {
-		message.value = "请填写有效体重（大于 0，单位 kg）";
-		return;
-	}
-	if (type.value !== 2 && !form.value.itemName.trim()) {
-		message.value = "请填写记录名称";
-		return;
-	}
+	message.value = validate();
+	if (message.value) return;
 	if (!requireLogin()) return;
 	if (petId.value <= 0) {
 		message.value = "这是示例档案，请先添加自己的宠物";
 		return;
 	}
-	const cycleDays = [0, 1].includes(type.value)
-		? Math.round(
-				(Date.parse(form.value.nextDate + "T12:00:00") -
-					Date.parse(form.value.occurDate + "T12:00:00")) /
-					86400000
-			)
-		: 0;
-	if ([0, 1].includes(type.value) && cycleDays < 1) {
-		message.value = "下次日期应晚于本次记录日期";
-		return;
-	}
+	const t = type.value;
+	if ([0, 1, 3].includes(t) && form.value.remind === 1)
+		askSubscribe(t === 3 ? ["medication"] : ["care"]);
 	saving.value = true;
 	try {
-		await addHealthRecord({
-			petId: petId.value,
-			type: type.value,
-			itemName: type.value === 2 ? "体重记录" : form.value.itemName.trim(),
-			subType: type.value === 1 ? form.value.subType : undefined,
-			occurDate: form.value.occurDate,
-			value: type.value === 2 ? value : undefined,
-			unit: type.value === 2 ? "kg" : undefined,
-			cycleDays,
-			remark: form.value.remark
-		});
+		const data = payload(await uploadPhotos());
+		if (editing.value) await updateHealthRecord({ ...data, id: recordId.value });
+		else if (t === 5) {
+			const r = await checkin({
+				petId: petId.value,
+				itemName: data.itemName,
+				occurDate: data.occurDate,
+				occurTime: data.occurTime,
+				photos: data.attachments,
+				remark: data.remark
+			});
+			uni.removeStorageSync(key());
+			done.value = r.id;
+			return;
+		} else await addHealthRecord(data);
 		uni.removeStorageSync(key());
 		uni.navigateBack();
 	} catch (e) {
@@ -189,15 +547,94 @@ async function save() {
 		saving.value = false;
 	}
 }
+async function undoCheckin() {
+	try {
+		await removeHealthRecord(done.value);
+		done.value = 0;
+		uni.showToast({ title: "已撤销", icon: "none" });
+	} catch (e) {
+		message.value = errorMessage(e);
+	}
+}
+function back() {
+	uni.navigateBack();
+}
+function remove() {
+	uni.showModal({
+		title: "删除这条记录？",
+		content: type.value === 3 ? "用药计划和服药记录都会删除" : "删除后无法恢复",
+		confirmColor: "#d9534f",
+		success: async (res) => {
+			if (!res.confirm) return;
+			try {
+				await removeHealthRecord(recordId.value);
+				uni.navigateBack();
+			} catch (e) {
+				message.value = errorMessage(e);
+			}
+		}
+	});
+}
+function fill(r: PetHealth) {
+	form.value = {
+		...blank(),
+		itemName: r.itemName || "",
+		subType: r.subType || "体外",
+		value: r.value !== undefined && r.value !== null ? String(Number(r.value)) : "",
+		occurDate: r.occurDate,
+		occurTime: r.occurTime || "",
+		nextDate: r.nextDate || addDays(r.occurDate, r.cycleDays || 30),
+		endDate: r.endDate || r.occurDate,
+		doseTimes: r.times || [],
+		dosage: r.dosage || "",
+		hospital: r.hospital || "",
+		diagnosis: r.diagnosis || "",
+		cost: r.cost !== undefined && r.cost !== null ? String(Number(r.cost)) : "",
+		remind: r.remind === 0 ? 0 : 1,
+		remark: r.remark || ""
+	};
+	if (r.cycleDays) cycle.value = r.cycleDays;
+	custom.value =
+		(r.type === 0 && !presets.value.vaccine.some((v) => v.name === r.itemName)) ||
+		(r.type === 5 && !presets.value.daily.includes(r.itemName));
+	photos.value = (r.photos || []).map((src) => ({ src, remote: src }));
+}
+function defaults() {
+	const draft = uni.getStorageSync(key());
+	if (draft && typeof draft === "object") {
+		form.value = { ...blank(), ...draft };
+		custom.value = type.value === 0 && !presets.value.vaccine.some((v) => v.name === draft.itemName);
+		return;
+	}
+	if (type.value === 0) {
+		if (presets.value.vaccine.length) pickVaccine(presets.value.vaccine[0]);
+		else form.value.nextDate = addDays(dateKey(), 365);
+	}
+	if (type.value === 1) {
+		const d = presets.value.deworm.find((x) => x.subType === "体外") || presets.value.deworm[0];
+		if (d) pickDeworm(d);
+	}
+}
 onLoad(async (opts) => {
 	petId.value = Number(opts?.petId || 0);
 	type.value = Number(opts?.type ?? 2);
+	recordId.value = Number(opts?.id || 0);
 	await refresh();
-	const draft = uni.getStorageSync(key());
-	if (draft) form.value = draft;
-	else {
-		if (type.value === 0) form.value.itemName = pet.value?.species === 1 ? "卫佳伍" : "猫三联";
-		if (type.value === 1) form.value.nextDate = addDays(dateKey(), 30);
+	try {
+		let record: PetHealth | null = null;
+		if (editing.value) {
+			record = await healthDetail(recordId.value);
+			petId.value = record.petId;
+			type.value = record.type;
+		}
+		if (pet.value) {
+			const p = await healthPresets(pet.value.species).catch(() => null);
+			if (p) presets.value = { ...FALLBACK, ...p };
+		}
+		if (record) fill(record);
+		else defaults();
+	} catch (e) {
+		message.value = errorMessage(e);
 	}
 });
 </script>
@@ -211,5 +648,109 @@ onLoad(async (opts) => {
 	text-align: center;
 	color: #329e6b;
 	font-weight: 650;
+}
+.time-list {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.time-chip {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	background: #eef7f0;
+	border-radius: 10px;
+	padding: 8px 10px;
+	font-size: 15px;
+}
+.time-chip .m-row {
+	gap: 6px;
+}
+.time-chip.add {
+	background: transparent;
+	border: 1px dashed #8cc7a4;
+	color: #329e6b;
+}
+.period-row {
+	gap: 8px;
+}
+.date-row {
+	gap: 8px;
+}
+.time-input {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	min-width: 100px;
+}
+.daily-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 8px;
+}
+.daily-item {
+	flex-direction: column;
+	gap: 6px;
+	height: 84px;
+	border-radius: 12px;
+	border: 1px solid #edf0ea;
+	background: #fafbf9;
+	font-size: 14px;
+}
+.daily-item.selected {
+	border-color: #48aa7b;
+	background: #eef7f0;
+	color: #329e6b;
+}
+.daily-symbol {
+	font-size: 28px;
+}
+.photo-grid {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.photo-item,
+.photo-add {
+	width: 92px;
+	height: 92px;
+	border-radius: 10px;
+	position: relative;
+	overflow: hidden;
+}
+.photo-item image {
+	width: 100%;
+	height: 100%;
+}
+.photo-remove {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: #0000008c;
+}
+.photo-add {
+	flex-direction: column;
+	gap: 4px;
+	border: 1px dashed #c9cfc8;
+}
+.done-bar {
+	gap: 8px;
+	background: #eef7f0;
+	border-radius: 22px;
+	padding: 10px 16px;
+	margin-bottom: 12px;
+	color: #329e6b;
+}
+.delete-btn {
+	margin-top: 10px;
+	color: #d9534f;
+	border-color: #f0c9c7;
 }
 </style>

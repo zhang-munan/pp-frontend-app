@@ -1,42 +1,111 @@
 <template>
 	<MPage :title="notifications ? '消息设置' : '设置'" back
 		><template v-if="notifications"
-			><view class="m-card"
-				><view class="m-row"
-					><MIcon name="bell" :size="32" /><view
-						><view class="m-heading">用心的提醒，温柔的陪伴</view
-						><view class="m-sub">在消息中心查看浇水与健康待办</view></view
+			><view v-if="guest" class="m-card"
+				><view class="m-name">登录后设置提醒</view
+				><button class="m-button full" @tap="login">登录 / 注册</button></view
+			><template v-else-if="setting"
+				><view class="m-card m-between"
+					><view class="m-grow"
+						><view class="m-heading">通知开关</view
+						><view class="m-sub">开启后，及时接收毛孩子与绿植的重要提醒</view></view
+					><switch
+						:checked="!!setting.enabled"
+						color="#48aa7b"
+						@change="save({ enabled: $event.detail.value ? 1 : 0 })"
+				/></view
+				><view class="m-card"
+					><view class="m-heading">默认提醒时间</view
+					><view class="m-sub">每天在该时间推送当天的提醒</view
+					><picker
+						mode="time"
+						:value="setting.remindTime"
+						@change="save({ remindTime: $event.detail.value })"
+						><view class="m-input m-between"
+							><text>提醒时间</text><text>{{ setting.remindTime }} ›</text></view
+						></picker
 					></view
-				><view class="m-divider" /><view class="m-sub"
-					>微信订阅提醒暂未开放，当前版本可在应用内查看到期事项。开放后，你可以在这里自主设置提醒方式。</view
-				><button class="m-button full" @tap="open('notifications')">
+				><view class="m-card"
+					><view class="m-heading">提醒内容设置</view
+					><view v-for="item in switches" :key="item.key" class="m-between switch-row"
+						><MIcon :name="item.icon" :size="22" /><view class="m-grow"
+							><view class="m-name">{{ item.name }}</view
+							><view class="m-sub">{{ item.desc }}</view></view
+						><switch
+							:checked="!!setting[item.key]"
+							color="#48aa7b"
+							@change="save({ [item.key]: $event.detail.value ? 1 : 0 })" /></view
+				></view
+				><view class="m-card"
+					><view class="m-heading">疫苗与驱虫提醒时机</view
+					><view class="m-sub">在到期前的指定时间推送，到期当天会再提醒一次</view
+					><view class="m-choices"
+						><button
+							v-for="d in [7, 3, 0]"
+							:key="d"
+							class="m-choice m-plain"
+							:class="{ selected: setting.advanceDays === d }"
+							@tap="save({ advanceDays: d })"
+						>
+							{{ d ? `提前 ${d} 天` : "当天" }}
+						</button></view
+					></view
+				><view class="m-card"
+					><view class="m-heading">提醒方式</view
+					><view class="m-between switch-row"
+						><MIcon name="bell" :size="22" /><view class="m-grow"
+							><view class="m-name">小程序订阅提醒</view
+							><view class="m-sub">{{ subscribeText }}</view></view
+						><button class="m-button small outline" @tap="enableSubscribe">
+							{{ subscribeCount ? "再订阅" : "去开启" }}
+						</button></view
+					><view class="m-between switch-row"
+						><MIcon name="chat" :size="22" /><view class="m-grow"
+							><view class="m-name">服务号提醒</view
+							><view class="m-sub">{{
+								subscribe?.officialLinked
+									? "已关联，提醒会优先通过服务号发送"
+									: "未关联，关注服务号后可接收更多提醒"
+							}}</view></view
+						><button class="m-button small outline" @tap="officialGuide">
+							{{ subscribe?.officialLinked ? "已关联" : "了解方式" }}
+						</button></view
+					></view
+				><button class="m-button outline full" @tap="open('notifications')">
 					查看消息中心
-				</button></view
+				</button></template
+			><view v-else-if="settingError" class="m-error" @tap="loadSetting"
+				>{{ settingError }} · 点击重试</view
 			></template
 		><template v-else
-			><view class="m-card"
-				><view class="m-name">{{
-					guest ? "尚未登录" : user.info.value?.nickName || "已登录"
-				}}</view
-				><view class="m-sub">{{
-					guest ? "登录后保存你的伙伴与成长记录" : "你的健康与养护记录保存在账号中"
-				}}</view
-				><button v-if="guest" class="m-button full" @tap="login">登录 / 注册</button></view
-			><view class="m-card"
-				><button
-					class="m-menu-row m-plain"
-					@tap="open('account-settings', 'section=notifications')"
-				>
-					<MIcon name="bell" /><text>消息设置</text
+			><view v-if="guest" class="m-card"
+				><view class="m-name">尚未登录</view
+				><view class="m-sub">登录后保存你的伙伴与成长记录</view
+				><button class="m-button full" @tap="login">登录 / 注册</button></view
+			><template v-else
+				><view class="m-sub group">账户</view
+				><view class="m-card menu"
+					><button class="m-menu-row m-plain" @tap="open('profile')">
+						<text>个人资料</text><text class="m-sub value">{{ user.info.value?.nickName || "" }}</text
+						><MIcon name="chevron" color="muted" :size="16" /></button
+					><button class="m-menu-row m-plain" @tap="open('change-phone')">
+						<text>账户与手机</text><text class="m-sub value">{{ user.info.value?.phone ? "已绑定" : "未绑定" }}</text
+						><MIcon name="chevron" color="muted" :size="16" /></button
+					><button class="m-menu-row m-plain" @tap="open('account-settings', 'section=notifications')">
+						<text>提醒偏好</text><MIcon name="chevron" color="muted" :size="16" /></button></view
+			></template
+			><view class="m-sub group">数据</view
+			><view class="m-card menu"
+				><button class="m-menu-row m-plain" @tap="open('privacy')">
+					<MIcon name="settings" /><text>隐私与数据</text
 					><MIcon name="chevron" color="muted" :size="16" /></button
-				><button
-					class="m-menu-row m-plain"
-					@tap="open('legal-document', 'type=privacy_policy')"
-				>
-					<MIcon name="file" /><text>隐私政策</text
-					><MIcon name="chevron" color="muted" :size="16" /></button
+				><button v-if="!guest" class="m-menu-row m-plain" @tap="open('data-export')">
+					<MIcon name="file" /><text>数据导出</text
+					><MIcon name="chevron" color="muted" :size="16" /></button></view
+			><view class="m-sub group">其他</view
+			><view class="m-card menu"
 				><button class="m-menu-row m-plain" @tap="open('help')">
-					<MIcon name="help" /><text>帮助反馈</text
+					<MIcon name="help" /><text>帮助与反馈</text
 					><MIcon name="chevron" color="muted" :size="16" /></button
 				><button class="m-menu-row m-plain" @tap="open('help', 'about=1')">
 					<MIcon name="leaf" /><text>关于毛与叶</text
@@ -48,14 +117,77 @@
 	>
 </template>
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
 import { useMaoyu, open, login } from "@/composables/maoyu";
+import { messageSetting, saveMessageSetting, type MessageSetting } from "@/api/message";
+import { askSubscribe, loadSubscribe, subscribeInfo } from "@/utils/subscribe";
+import { errorMessage } from "@/utils/error";
 const { guest, user, refresh } = useMaoyu(),
-	notifications = ref(false);
+	notifications = ref(false),
+	setting = ref<MessageSetting | null>(null),
+	settingError = ref(""),
+	subscribe = ref(subscribeInfo());
+const switches = [
+	{ key: "water", name: "浇水提醒", desc: "按植物的养护周期提醒", icon: "water" },
+	{ key: "fertilize", name: "施肥提醒", desc: "按植物的施肥周期提醒", icon: "leaf" },
+	{ key: "vaccine", name: "疫苗提醒", desc: "按毛孩子的疫苗计划提醒", icon: "vaccine" },
+	{ key: "deworm", name: "驱虫提醒", desc: "按毛孩子的驱虫计划提醒", icon: "paw" },
+	{ key: "medication", name: "用药提醒", desc: "按用药时间点逐顿提醒", icon: "pill" }
+];
+const subscribeCount = computed(() =>
+	Object.values(subscribe.value?.counts || {}).reduce((n, c) => n + Number(c || 0), 0)
+);
+const subscribeText = computed(() =>
+	!subscribe.value?.templates?.length
+		? "订阅提醒暂未开放，可在消息中心查看提醒"
+		: subscribeCount.value
+			? `已开启，还可接收 ${subscribeCount.value} 次提醒`
+			: "未开启，可能无法收到微信通知"
+);
+async function loadSetting() {
+	settingError.value = "";
+	try {
+		setting.value = await messageSetting();
+		subscribe.value = await loadSubscribe(true);
+	} catch (e) {
+		settingError.value = errorMessage(e, "设置加载失败");
+	}
+}
+async function save(patch: Partial<MessageSetting>) {
+	if (!setting.value) return;
+	const before = { ...setting.value };
+	Object.assign(setting.value, patch);
+	try {
+		setting.value = await saveMessageSetting(patch);
+	} catch (e) {
+		setting.value = before;
+	}
+}
+async function enableSubscribe() {
+	const result = await askSubscribe(["care", "medication"], true);
+	if (result) {
+		subscribe.value = await loadSubscribe(true);
+		const accepted = Object.values(result).some((v) => v === "accept");
+		uni.showToast({ title: accepted ? "已开启订阅提醒" : "未开启订阅", icon: "none" });
+	}
+}
+function officialGuide() {
+	if (subscribe.value?.officialLinked) return;
+	uni.showModal({
+		title: "服务号提醒",
+		content:
+			"在微信中搜索并关注「毛与叶」服务号，并使用同一微信登录小程序。关联后提醒会通过服务号发送，不再受订阅次数限制（关联在次日自动完成）。",
+		showCancel: false,
+		confirmText: "知道了"
+	});
+}
 onLoad((o) => (notifications.value = o?.section === "notifications"));
-onShow(refresh);
+onShow(async () => {
+	await refresh();
+	if (notifications.value && !guest.value) loadSetting();
+});
 function logout() {
 	uni.showModal({
 		title: "退出登录",
@@ -70,3 +202,21 @@ function logout() {
 	});
 }
 </script>
+<style scoped>
+.group {
+	margin: 14px 4px 8px;
+}
+.m-menu-row .value {
+	flex: none;
+	font-size: 13px;
+	margin-right: -8px;
+}
+.switch-row {
+	gap: 12px;
+	padding: 12px 0;
+	border-bottom: 1px solid #f0f2ec;
+}
+.switch-row:last-child {
+	border-bottom: 0;
+}
+</style>

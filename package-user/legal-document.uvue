@@ -1,5 +1,5 @@
 <template>
-	<MPage :title="kind === 'privacy_policy' ? '隐私政策' : '用户协议'" back
+	<MPage :title="LEGAL_TITLES[kind] || '用户协议'" back
 		><view class="m-card"
 			><view v-if="loading" class="m-sub">正在读取…</view
 			><rich-text v-else-if="content" :nodes="content" /><view v-else class="m-sub"
@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import MPage from "@/components/MPage.uvue";
-import { legalContent } from "@/api/legal";
+import { legalContent, LEGAL_TITLES } from "@/api/legal";
 const kind = ref("user_agreement"),
 	content = ref(""),
 	loading = ref(true);

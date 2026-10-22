@@ -1,20 +1,90 @@
 <template>
-	<MPage :title="about ? '关于毛与叶' : '帮助反馈'" back
-		><view class="m-card m-empty"
-			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-heading"
-				>毛与叶</view
-			><view class="m-sub">你负责陪伴，我负责提醒</view></view
-		><template v-if="!about"
-			><view class="m-card" v-for="(q, i) in questions" :key="q.title"
-				><button class="m-plain m-between question" @tap="active = active === i ? -1 : i">
-					<text>{{ q.title }}</text
+	<MPage :title="about ? '关于毛与叶' : '帮助与反馈'" back
+		><template v-if="about"
+			><view class="about-head"
+				><image class="about-logo" :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="about-name">毛与叶</view
+				><view class="m-sub">让每一份陪伴，都被好好照顾</view
+				><view class="m-sub version">V{{ version }}</view></view
+			><view class="m-card menu"
+				><button class="m-plain m-menu-row" @tap="open('legal-document', 'type=user_agreement')">
+					<MIcon name="file" /><text>用户协议</text><MIcon name="chevron" color="muted" :size="16" /></button
+				><button class="m-plain m-menu-row" @tap="open('legal-document', 'type=privacy_policy')">
+					<MIcon name="settings" color="amber" /><text>隐私政策</text
 					><MIcon name="chevron" color="muted" :size="16" /></button
-				><view v-if="active === i" class="answer m-sub">{{ q.answer }}</view></view
+				><button class="m-plain m-menu-row" @tap="open('legal-document', 'type=ai_notice')">
+					<MIcon name="chat" /><text>AI 使用说明</text><MIcon name="chevron" color="muted" :size="16" /></button
+			></view
+			><view class="m-sub about-note">AI 建议仅供参考，\n不替代专业的医疗、营养或其他专业意见。</view></template
+		><template v-else
+			><view class="m-choices tabs"
+				><button class="m-choice m-plain" :class="{ selected: tab === 'help' }" @tap="tab = 'help'">帮助与反馈</button
+				><button class="m-choice m-plain" :class="{ selected: tab === 'mine' }" @tap="showMine">我的反馈</button></view
+			><template v-if="tab === 'help'"
+				><view class="m-card"
+					><view class="m-row card-title"><MIcon name="leaf" :size="22" /><text class="m-heading">常见问题</text></view
+					><view v-for="(q, i) in questions" :key="q.title" class="faq"
+						><button class="m-plain m-between question" @tap="active = active === i ? -1 : i">
+							<text>{{ q.title }}</text
+							><MIcon name="chevron" color="muted" :size="16" /></button
+						><view v-if="active === i" class="answer m-sub">{{ q.answer }}</view></view
+					></view
+				><view class="m-card"
+					><view class="m-row card-title"><MIcon name="chat" color="amber" :size="22" /><text class="m-heading">告诉我们你的想法</text></view
+					><view class="m-choices"
+						><button
+							v-for="(t, i) in FEEDBACK_TYPES"
+							:key="t"
+							class="m-choice m-plain"
+							:class="{ selected: type === i }"
+							@tap="type = i"
+						>
+							{{ t }}
+						</button></view
+					><textarea
+						class="m-textarea content"
+						:value="content"
+						maxlength="500"
+						placeholder="请描述你的问题或建议"
+						@input="content = $event.detail.value"
+					/><view class="m-sub count">{{ content.length }}/500</view
+					><view class="m-row images"
+						><view v-for="(img, i) in images" :key="img" class="image"
+							><image :src="img" mode="aspectFill" @tap="preview(i)" /><button class="m-plain remove" @tap="images.splice(i, 1)">
+								<MIcon name="close" color="white" :size="12" /></button></view
+						><button v-if="images.length < 3" class="m-plain add" @tap="pickImages">
+							<MIcon name="plus" color="muted" :size="24" /></button
+						><text class="m-sub">上传图片（选填，最多 3 张）</text></view
+					><view class="m-field"
+						><text class="m-label">联系方式<text class="m-sub">（选填）</text></text
+						><input
+							class="m-input"
+							:value="contact"
+							maxlength="100"
+							placeholder="方便我们进一步了解问题"
+							@input="contact = $event.detail.value"
+					/></view></view
+				><button class="m-button full" :disabled="submitting" @tap="submit">
+					{{ submitting ? "提交中…" : "提交反馈" }}
+				</button></template
+			><template v-else
+				><view v-if="loadingMine" class="m-note">正在加载…</view
+				><view v-else-if="!mine.length" class="m-empty"
+					><MIcon name="chat" :size="32" /><view class="m-sub">还没有提交过反馈</view></view
+				><view v-for="f in mine" :key="f.id" class="m-card"
+					><view class="m-between"
+						><text class="m-name">{{ FEEDBACK_TYPES[f.type] || "其他" }}</text
+						><text :class="f.status === 1 ? 'm-green' : 'm-sub'">{{ FEEDBACK_STATUS[f.status] }}</text></view
+					><view class="answer">{{ f.content }}</view
+					><view v-if="f.images?.length" class="m-row images"
+						><image v-for="img in f.images" :key="img" class="image" :src="img" mode="aspectFill" @tap="previewList(f.images, img)"
+					/></view
+					><view class="m-sub">{{ f.createTime?.slice(0, 16) }}</view
+					><view v-if="f.reply" class="reply"
+						><view class="m-name m-green">官方回复</view><view class="answer">{{ f.reply }}</view
+						><view class="m-sub">{{ f.replyTime?.slice(0, 16) }}</view></view
+					></view
+				></template
 			></template
-		><view v-else class="m-card"
-			><view class="answer"
-				>一站式宠物健康管家与植物养护助手。把每一份健康、每一次生长，记进平凡又温柔的日常。</view
-			><view class="m-sub">当前版本优先提供档案、健康记录、浇水与基础问答。</view></view
 		></MPage
 	>
 </template>
@@ -22,41 +92,199 @@
 import { ref } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-import { asset } from "@/composables/maoyu";
+import { upload } from "@/.cool";
+import { FEEDBACK_TYPES, FEEDBACK_STATUS, submitFeedback, myFeedback, type FeedbackInfo } from "@/api/feedback";
+import { asset, open, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
 const about = ref(false),
-	active = ref(-1);
+	tab = ref("help"),
+	active = ref(-1),
+	type = ref(0),
+	content = ref(""),
+	contact = ref(""),
+	images = ref<string[]>([]),
+	submitting = ref(false),
+	mine = ref<FeedbackInfo[]>([]),
+	loadingMine = ref(false);
+let version = "1.0.0";
+// #ifdef MP-WEIXIN
+version = uni.getAccountInfoSync?.()?.miniProgram?.version || version;
+// #endif
 const questions = [
 	{
-		title: "如何添加第一位小伙伴？",
-		answer: "进入毛孩子或绿叶子页面，点击添加。填写昵称和基本信息，登录后即可保存档案。"
+		title: "如何设置提醒？",
+		answer:
+			"在「我的 - 设置 - 提醒偏好」中打开通知开关并选择提醒时间、提醒内容。点击「去开启」授权小程序订阅消息，关注服务号后提醒不受订阅次数限制。"
 	},
 	{
-		title: "误点了浇水，如何撤销？",
-		answer: "打卡后点击底部提示中的“撤销”，也可以进入植物档案，撤销今天的浇水记录。"
+		title: "如何撤销浇水？",
+		answer: "打卡后点击底部提示中的「撤销」即可；也可以进入植物档案，长按今天的浇水记录删除。"
 	},
 	{
-		title: "保存失败，刚才填写的内容还在吗？",
-		answer: "当前输入会保留在表单中，档案与健康记录表单也会在本机保留草稿。网络恢复后可再次保存。"
+		title: "如何共享档案？",
+		answer: "在「我的 - 家庭共享」中生成邀请，发送给家人。家人接受后可以查看你的宠物与植物档案（只读），你可以随时移除成员。"
 	},
 	{
-		title: "为什么看到的是示例档案？",
-		answer: "未登录时可以浏览示例，示例不会写入你的账号。登录后展示自己的档案，没有档案时可从添加伙伴开始。"
+		title: "AI 的建议可靠吗？",
+		answer: "智慧助手会结合你的档案给出参考建议，但不能替代兽医或专业人士。宠物出现急症时请立即就医。"
 	},
 	{
-		title: "如何反馈使用问题？",
-		answer: "请保留发生问题的页面名称、操作步骤和时间。当前版本尚未开放在线反馈提交，可将这些信息提供给项目维护人员。"
+		title: "如何删除我的数据？",
+		answer: "在「设置 - 隐私与数据」中可以删除全部个人数据或注销账号，删除后无法恢复，建议先导出需要的记录。"
 	}
 ];
-onLoad((o) => (about.value = o?.about === "1"));
+function pickImages() {
+	uni.chooseImage({
+		count: 3 - images.value.length,
+		sizeType: ["compressed"],
+		success: (r) => (images.value = [...images.value, ...r.tempFilePaths].slice(0, 3))
+	});
+}
+function preview(i: number) {
+	uni.previewImage({ urls: images.value, current: i });
+}
+function previewList(urls: string[], current: string) {
+	uni.previewImage({ urls, current });
+}
+async function submit() {
+	if (submitting.value || !requireLogin()) return;
+	const text = content.value.trim();
+	if (!text) return uni.showToast({ title: "请描述你的问题或建议", icon: "none" });
+	submitting.value = true;
+	try {
+		const urls: string[] = [];
+		for (const img of images.value) urls.push(/^https?:/.test(img) ? img : await upload(img, { prefixPath: "maoyu/feedback" }));
+		images.value = urls;
+		await submitFeedback({ type: type.value, content: text, images: urls, contact: contact.value.trim() });
+		content.value = "";
+		contact.value = "";
+		images.value = [];
+		uni.showToast({ title: "感谢反馈，我们会尽快处理" , icon: "none" });
+		showMine();
+	} catch (e) {
+		uni.showToast({ title: errorMessage(e, "提交失败，请重试"), icon: "none" });
+	} finally {
+		submitting.value = false;
+	}
+}
+async function showMine() {
+	if (!requireLogin()) return;
+	tab.value = "mine";
+	loadingMine.value = true;
+	try {
+		mine.value = (await myFeedback()) || [];
+	} catch (e) {
+		/* The request layer reports the error. */
+	} finally {
+		loadingMine.value = false;
+	}
+}
+onLoad((o) => {
+	about.value = o?.about === "1";
+	if (o?.tab === "mine") showMine();
+});
 </script>
 <style scoped>
+.tabs {
+	margin: 4px 0 12px;
+}
+.card-title {
+	gap: 8px;
+	margin-bottom: 6px;
+}
+.faq {
+	border-bottom: 1px solid #eff0ee;
+}
+.faq:last-child {
+	border: 0;
+}
 .question {
 	width: 100%;
 	font-size: 15px;
 	text-align: left;
+	min-height: 48px;
 }
 .answer {
-	line-height: 1.9;
-	margin: 10px 0;
+	line-height: 1.8;
+	margin: 8px 0;
+	white-space: pre-wrap;
+}
+.content {
+	margin-top: 12px;
+	min-height: 120px;
+}
+.count {
+	text-align: right;
+	margin: 4px 0 12px;
+}
+.images {
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-bottom: 14px;
+}
+.image {
+	width: 72px;
+	height: 72px;
+	border-radius: 8px;
+	overflow: hidden;
+	position: relative;
+}
+.image image {
+	width: 72px;
+	height: 72px;
+}
+.remove {
+	position: absolute;
+	right: 2px;
+	top: 2px;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.45);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+}
+.add {
+	width: 72px;
+	height: 72px;
+	border: 1px dashed #cfd5cf;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.reply {
+	background: #f2f8f4;
+	border-radius: 10px;
+	padding: 10px 12px;
+	margin-top: 10px;
+}
+.about-head {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 24px 0 20px;
+	gap: 6px;
+}
+.about-logo {
+	width: 140px;
+	height: 110px;
+}
+.about-name {
+	font-size: 30px;
+	font-weight: 700;
+	color: #2f4a35;
+	letter-spacing: 4px;
+}
+.version {
+	font-size: 12px;
+}
+.about-note {
+	text-align: center;
+	white-space: pre-line;
+	line-height: 1.8;
+	margin-top: 12px;
 }
 </style>

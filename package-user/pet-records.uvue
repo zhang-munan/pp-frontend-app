@@ -30,10 +30,31 @@
 					:src="chartSrc"
 					mode="aspectFit"
 				/><view v-else class="m-empty m-sub">记录体重后，在这里看见成长的轨迹</view
-				><view class="m-sub">结合品种与年龄观察变化。</view></view
+				><view
+					class="m-sub"
+					:class="{
+						'm-amber': range?.status === 'low' || range?.status === 'high',
+						'm-green': range?.status === 'normal'
+					}"
+					>{{ range?.tip || "结合品种与年龄观察变化。" }}</view
+				></view
+			><view v-if="analysis" class="m-card"
+				><view class="m-between"
+					><text class="m-heading">Plus 体重分析</text
+					><text class="m-sub">{{ trendText }}</text></view
+				><view v-for="line in analysis.report" :key="line" class="report-line"
+					>· {{ line }}</view
+				></view
 			></template
 		>
-		<view v-if="curType !== 2" class="record-filters"
+		<view v-if="curType === 0 && nextVaccine" class="m-card next-card m-row"
+			><MIcon name="calendar" color="amber" :size="30" /><view class="m-grow"
+				><view class="m-name">下一针：{{ nextVaccine.itemName }}</view
+				><view class="m-amber next-date">{{ nextVaccine.nextDate }}</view
+				><view class="m-sub">按时接种，守护{{ pet?.name || "TA" }}的健康</view></view
+			></view
+		>
+		<view class="record-filters"
 			><button
 				v-for="f in filters"
 				:key="f.type"
@@ -45,9 +66,7 @@
 			</button></view
 		>
 		<view class="m-card"
-			><view class="m-heading">{{
-				curType === 2 ? "历史记录" : curType === -1 ? "成长时间线" : title
-			}}</view
+			><view class="m-heading">{{ curType === 2 ? "历史记录" : curType === 0 ? "接种历史" : title }}</view
 			><view v-if="loading" class="m-note">正在加载…</view
 			><view v-if="!records.length && !loading" class="m-empty"
 				><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-sub"
@@ -61,26 +80,47 @@
 					<view class="m-grow"
 						><view class="m-name"
 							>{{ r.itemName }}
-							<text v-if="r.type === 2" class="m-green">{{ r.value }} kg</text></view
+							<text v-if="r.type === 2" class="m-green">{{ r.value }} kg</text
+							><text v-if="r.type === 4 && r.cost" class="m-green"
+								>¥{{ Number(r.cost) }}</text
+							><text v-if="r.closed" class="done-tag">已完成</text></view
 						><view class="m-sub"
-							>{{ r.occurDate
-							}}<text v-if="r.nextDate"> · 下次 {{ r.nextDate }}</text></view
+							>{{ r.occurDate }}<text v-if="r.occurTime"> {{ r.occurTime }}</text
+							><text v-if="r.nextDate && !r.closed"> · 下次 {{ r.nextDate }}</text></view
 						></view
 					><MIcon name="chevron" color="muted" :size="16" /></button
 				><view v-if="expanded === r.id" class="record-details"
+					><view v-if="r.subType" class="m-sub">类型：{{ r.subType }}</view
+					><view v-if="r.dosage" class="m-sub">用量：{{ r.dosage }}</view
+					><view v-if="r.hospital" class="m-sub">医院：{{ r.hospital }}</view
+					><view v-if="r.diagnosis" class="m-sub">诊断：{{ r.diagnosis }}</view
 					><view class="m-sub">{{ r.remark || "暂无备注" }}</view
-					><view v-if="r.subType" class="m-sub">{{ r.subType }}</view></view
+					><view v-if="r.photos?.length" class="detail-photos"
+						><image
+							v-for="(src, i) in r.photos"
+							:key="src"
+							:src="src"
+							mode="aspectFill"
+							@tap="preview(r.photos, i)" /></view
+					><view v-if="r.id > 0" class="m-row detail-actions"
+						><button class="m-button small outline" @tap="edit(r)">编辑</button
+						><button class="m-button small soft" @tap="remove(r)">删除</button></view
+					></view
 				></view
 			></view
 		>
 		<button class="m-button full" @tap="openForm">
-			{{
-				curType === 2
-					? "记录体重"
-					: curType === -1
-						? "记录日常"
-						: "新增" + HEALTH_TYPE_NAMES[curType]
-			}}
+			{{ curType === 2 ? "记录体重" : "记一笔" + HEALTH_TYPE_NAMES[curType] }}
+		</button>
+		<button v-if="curType === 2" class="m-button outline full extra-btn" @tap="loadAnalysis">
+			<MIcon name="crown" color="amber" :size="18" />Plus 高级分析
+		</button>
+		<button
+			v-if="curType === 0 && pet && pet.id > 0"
+			class="m-button outline full extra-btn"
+			@tap="open('vaccine-book', `petId=${pet.id}`)"
+		>
+			<MIcon name="crown" color="amber" :size="18" />导出疫苗本
 		</button>
 	</MPage>
 </template>
@@ -88,8 +128,17 @@
 import { ref, computed } from "vue";
 import MPage from "@/components/MPage.uvue";
 import MIcon from "@/components/MIcon.uvue";
-import { healthList, HEALTH_TYPE_NAMES, type PetHealth } from "@/api/pet";
-import { useMaoyu, asset, photo, open, demoRecords, daysFromToday } from "@/composables/maoyu";
+import {
+	healthList,
+	removeHealthRecord,
+	weightRange,
+	weightAnalysis,
+	HEALTH_TYPE_NAMES,
+	type PetHealth,
+	type WeightRange,
+	type WeightAnalysis
+} from "@/api/pet";
+import { useMaoyu, asset, photo, open, demoRecords, daysFromToday, requireLogin } from "@/composables/maoyu";
 import { errorMessage } from "@/utils/error";
 const { visiblePets, refresh } = useMaoyu(),
 	petId = ref(0),
@@ -98,7 +147,9 @@ const { visiblePets, refresh } = useMaoyu(),
 	loading = ref(false),
 	error = ref(""),
 	expanded = ref(0),
-	period = ref(30);
+	period = ref(30),
+	range = ref<WeightRange | null>(null),
+	analysis = ref<WeightAnalysis | null>(null);
 const periods = [
 	{ name: "周", days: 7 },
 	{ name: "月", days: 30 },
@@ -108,22 +159,23 @@ const filters = computed(() =>
 	pet.value && pet.value.species > 1
 		? [
 				{ name: "体重", type: 2 },
-				{ name: "全部", type: -1 }
+				{ name: "日常", type: 5 }
 			]
-		: [{ name: "全部", type: -1 }, ...HEALTH_TYPE_NAMES.map((name, type) => ({ name, type }))]
+		: [0, 1, 2, 4, 5].map((type) => ({ name: HEALTH_TYPE_NAMES[type], type }))
 );
 const pet = computed(() => visiblePets.value.find((p) => p.id === petId.value)),
 	title = computed(() =>
-		curType.value === 2
-			? "体重曲线"
-			: curType.value === -1
-				? "宠物时间线"
-				: HEALTH_TYPE_NAMES[curType.value] + "记录"
+		curType.value === 2 ? "体重曲线" : HEALTH_TYPE_NAMES[curType.value] + "记录"
 	);
 const records = computed(() =>
 	all.value
-		.filter((r) => curType.value === -1 || r.type === curType.value)
-		.sort((a, b) => b.occurDate.localeCompare(a.occurDate))
+		.filter((r) => r.type === curType.value)
+		.sort((a, b) => b.occurDate.localeCompare(a.occurDate) || b.id - a.id)
+);
+const nextVaccine = computed(() =>
+	all.value
+		.filter((r) => r.type === 0 && !r.closed && r.nextDate)
+		.sort((a, b) => (a.nextDate || "").localeCompare(b.nextDate || ""))[0]
 );
 const weights = computed(() =>
 	all.value
@@ -136,22 +188,33 @@ const weightChange = computed(() => {
 	const d = Number(w[w.length - 1].value) - Number(w[w.length - 2].value);
 	return `较上次 ${d >= 0 ? "+" : ""}${d.toFixed(1)} kg`;
 });
+const trendText = computed(() => {
+	const a = analysis.value;
+	if (!a?.enough) return "";
+	return a.trend === "up" ? "上升趋势" : a.trend === "down" ? "下降趋势" : "基本稳定";
+});
 const chartSrc = computed(() => {
 	const w = weights.value.filter((r) => (daysFromToday(r.occurDate) || 0) >= -period.value);
 	if (!w.length) return "";
-	const vals = w.map((r) => Number(r.value)),
-		min = Math.max(0, Math.min(...vals) - 0.2),
+	const band = range.value?.range;
+	const vals = w.map((r) => Number(r.value));
+	if (band) vals.push(band.min, band.max);
+	const min = Math.max(0, Math.min(...vals) - 0.2),
 		max = Math.max(...vals) + 0.2;
+	const y = (v: number) => 160 - ((v - min) / (max - min)) * 120;
 	const points = w.map((r, i) => ({
 		x: 34 + (w.length === 1 ? 125 : (i * 250) / (w.length - 1)),
-		y: 160 - ((Number(r.value) - min) / (max - min)) * 120,
+		y: y(Number(r.value)),
 		r
 	}));
 	let svg =
 		'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="210" viewBox="0 0 320 210">';
+	if (band) {
+		svg += `<rect x="32" y="${y(band.max)}" width="272" height="${y(band.min) - y(band.max)}" fill="#e3f3e8"/><text x="300" y="${y(band.max) + 12}" text-anchor="end" font-size="10" fill="#48aa7b">参考区间</text>`;
+	}
 	for (let i = 0; i < 4; i++) {
-		const y = 40 + i * 40;
-		svg += `<path d="M32 ${y}H304" stroke="#e3e8e2" stroke-dasharray="4 4"/><text x="0" y="${y + 4}" font-size="10" fill="#88918a">${(max - (i * (max - min)) / 3).toFixed(1)}</text>`;
+		const gy = 40 + i * 40;
+		svg += `<path d="M32 ${gy}H304" stroke="#e3e8e2" stroke-dasharray="4 4"/><text x="0" y="${gy + 4}" font-size="10" fill="#88918a">${(max - (i * (max - min)) / 3).toFixed(1)}</text>`;
 	}
 	svg += `<polyline points="${points.map((p) => p.x + "," + p.y).join(" ")}" fill="none" stroke="#48aa7b" stroke-width="2.5"/>`;
 	points.forEach((p, i) => {
@@ -163,17 +226,58 @@ const chartSrc = computed(() => {
 });
 function changeType(type: number) {
 	curType.value = type;
+	expanded.value = 0;
 }
 function openForm() {
-	open("health-form", `petId=${petId.value}&type=${curType.value === -1 ? 5 : curType.value}`);
+	open("health-form", `petId=${petId.value}&type=${curType.value}`);
+}
+function edit(r: PetHealth) {
+	open("health-form", `petId=${r.petId}&type=${r.type}&id=${r.id}`);
+}
+function preview(urls: string[], current: number) {
+	uni.previewImage({ urls, current });
+}
+function remove(r: PetHealth) {
+	uni.showModal({
+		title: "删除这条记录？",
+		content: r.nextDate && !r.closed ? "删除后，上一条记录的提醒会重新生效" : "删除后无法恢复",
+		confirmColor: "#d9534f",
+		success: async (res) => {
+			if (!res.confirm) return;
+			try {
+				await removeHealthRecord(r.id);
+				expanded.value = 0;
+				await load();
+			} catch (e) {
+				error.value = errorMessage(e);
+			}
+		}
+	});
+}
+async function loadAnalysis() {
+	if (!requireLogin() || petId.value <= 0) return;
+	try {
+		analysis.value = await weightAnalysis(petId.value);
+	} catch (e) {
+		/* 非会员由请求层弹出开通引导 */
+	}
 }
 async function load() {
 	loading.value = true;
 	error.value = "";
 	try {
 		await refresh();
-		all.value =
-			petId.value < 0 ? demoRecords(petId.value) : (await healthList(petId.value)) || [];
+		if (petId.value < 0) {
+			all.value = demoRecords(petId.value);
+			range.value = null;
+		} else {
+			const [list, r] = await Promise.all([
+				healthList(petId.value),
+				weightRange(petId.value).catch(() => null)
+			]);
+			all.value = list || [];
+			range.value = r;
+		}
 	} catch (e) {
 		error.value = errorMessage(e);
 	} finally {
@@ -182,7 +286,14 @@ async function load() {
 }
 onLoad((opts) => {
 	petId.value = Number(opts?.petId || 0);
-	curType.value = Number(opts?.type ?? 2);
+	const type = Number(opts?.type ?? 2);
+	if (type === 3 || type === -1) {
+		uni.redirectTo({
+			url: `/package-user/${type === 3 ? "medication" : "pet-timeline"}?petId=${petId.value}`
+		});
+		return;
+	}
+	curType.value = type;
 });
 onShow(load);
 </script>
@@ -220,6 +331,19 @@ onShow(load);
 	width: 100%;
 	height: 220px;
 }
+.report-line {
+	font-size: 14px;
+	line-height: 1.8;
+	color: #33453a;
+}
+.next-card {
+	gap: 12px;
+	background: #fff8e6;
+}
+.next-date {
+	font-size: 18px;
+	font-weight: 600;
+}
 .record-filters {
 	display: flex;
 	flex-direction: row;
@@ -241,10 +365,39 @@ onShow(load);
 .history-main .m-name {
 	font-size: 15px;
 }
+.done-tag {
+	margin-left: 6px;
+	font-size: 11px;
+	color: #329e6b;
+	background: #e6f4ea;
+	border-radius: 10px;
+	padding: 2px 8px;
+}
 .record-details {
 	background: #f5f8f3;
 	padding: 12px;
 	border-radius: 10px;
 	margin-bottom: 12px;
+	line-height: 1.8;
+}
+.detail-photos {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+.detail-photos image {
+	width: 72px;
+	height: 72px;
+	border-radius: 8px;
+}
+.detail-actions {
+	gap: 10px;
+	margin-top: 10px;
+}
+.extra-btn {
+	margin-top: 10px;
+	gap: 6px;
 }
 </style>

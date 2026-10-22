@@ -1,7 +1,7 @@
 {
     "name": "毛与叶",
-    "appid" : "__UNI__GOSSIP01",
-    "description" : "那些说不出口的话，我们帮你送达",
+    "appid" : "__UNI__MAOYUYE",
+    "description" : "毛与叶：宠物健康管家 × 植物养护助手 × AI 养护问答",
     "versionName" : "1.0.0",
     "versionCode" : "100",
     "uni-app-x" : {},
@@ -50,7 +50,7 @@
     },
     "app-harmony" : {
         "distribute" : {
-            "bundleName" : "cool.unix.demo",
+            "bundleName" : "com.maoyuye.app",
             "signingConfigs" : {
                 "default" : {
                     "certpath" : "/Users/icssoa/Library/Application Support/HBuilder X/extensions/launcher/agc-certs/1761881606984.cer",
