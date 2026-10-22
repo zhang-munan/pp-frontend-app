@@ -1,0 +1,237 @@
+<template>
+	<MPage title="智慧助手" back
+		><template v-if="!messages.length"
+			><view class="assistant-welcome"
+				><view class="assistant-icon"><MIcon name="leaf" :size="32" /></view
+				><view class="welcome-bubble">你好呀，养宠种花的问题都可以问我～</view></view
+			><view class="assist-options"
+				><button class="assist-option m-plain warm" @tap="photoNotice">
+					<MIcon name="camera" color="amber" :size="34" /><view class="m-name"
+						>拍照问诊</view
+					><view class="m-sub">拍下宠物或植物，记录你的问题</view></button
+				><button class="assist-option m-plain green" @tap="photoNotice">
+					<MIcon name="leaf" :size="34" /><view class="m-name">识品种</view
+					><view class="m-sub">认识你的小伙伴，了解养护要点</view></button
+				><button class="assist-option m-plain blue" @tap="focus = true">
+					<MIcon name="chat" :size="34" /><view class="m-name">直接提问</view
+					><view class="m-sub">任何养宠种花的问题，都可以问我</view>
+				</button></view
+			><view class="m-heading m-section">大家都在问</view
+			><view class="quick-grid"
+				><button
+					v-for="q in quicks"
+					:key="q.text"
+					class="m-plain quick"
+					@tap="send(q.text)"
+				>
+					<MIcon :name="q.icon" :size="20" /><text>{{ q.text }}</text>
+				</button></view
+			><view v-if="currentPet" class="m-heading m-section">我的小伙伴</view
+			><view v-if="currentPet" class="m-card m-row"
+				><image class="m-avatar" :src="photo(currentPet, 'pet')" mode="aspectFill" /><view
+					class="m-grow"
+					><view class="m-name">{{ currentPet.name }}</view
+					><view class="m-sub"
+						>{{ ageText(currentPet.birthday) }} ·
+						{{ guest ? "示例档案" : currentPet.breed }}</view
+					></view
+				><button class="m-plain m-green" @tap="open('archives')">查看档案 ›</button></view
+			></template
+		>
+		<view v-for="(m, i) in messages" :key="i" class="chat-message" :class="m.role"
+			><view class="bubble">{{ m.text }}</view></view
+		><view v-if="sending" class="m-note">正在认真想一想…</view
+		><view v-if="error" class="m-error"
+			>{{ error }}<button class="m-plain m-green" @tap="send()">重试</button></view
+		><view class="m-banner quota"
+			><MIcon name="chat" /><view class="m-grow">{{
+				guest
+					? "登录后开启养护咨询"
+					: quota
+						? `今日剩余 ${quota.remaining} 次`
+						: "额度暂未获取"
+			}}</view></view
+		>
+		<view class="composer"
+			><input
+				class="m-input"
+				:focus="focus"
+				v-model="question"
+				placeholder="请输入你的问题…"
+				confirm-type="send"
+				@confirm="send()"
+			/><button class="m-button small" :disabled="sending || !question.trim()" @tap="send()">
+				发送
+			</button></view
+		><view class="m-note">AI 建议仅供参考，不能替代专业诊疗</view></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { ask, aiQuota } from "@/api/care";
+import { useMaoyu, photo, open, ageText, requireLogin } from "@/composables/maoyu";
+const { guest, currentPet, refresh } = useMaoyu(),
+	question = ref(""),
+	sending = ref(false),
+	focus = ref(false),
+	error = ref(""),
+	quota = ref<any>(null),
+	messages = ref<{ role: string; text: string }[]>([]);
+const quicks = [
+	{ text: "猫咪吐了怎么办", icon: "cat" },
+	{ text: "多肉叶子发软", icon: "leaf" },
+	{ text: "幼猫疫苗时间表", icon: "vaccine" },
+	{ text: "绿萝黄叶", icon: "water" }
+];
+function photoNotice() {
+	uni.showModal({
+		title: "拍照咨询暂未开放",
+		content: "你可以先用文字描述问题，或在伙伴档案里添加照片。",
+		showCancel: false
+	});
+}
+async function send(text = "") {
+	const value = (text || question.value).trim();
+	if (!value || sending.value) return;
+	question.value = value;
+	if (!requireLogin()) return;
+	sending.value = true;
+	error.value = "";
+	try {
+		const result = await ask(value);
+		if (!result) throw new Error("empty");
+		if (result.limited) {
+			error.value = result.message || "今日额度已用尽，明天再来看看";
+			return;
+		}
+		messages.value.push(
+			{ role: "user", text: value },
+			{ role: "assistant", text: result.answer || "暂未获得回复，请稍后重试" }
+		);
+		question.value = "";
+		quota.value = { remaining: Math.max(0, result.limit - result.used), limit: result.limit };
+	} catch (e) {
+		error.value = "连接暂时中断，你的问题已保留，请重试。";
+	} finally {
+		sending.value = false;
+	}
+}
+onShow(async () => {
+	await refresh();
+	if (!guest.value) {
+		try {
+			quota.value = await aiQuota();
+		} catch (e) {
+			quota.value = null;
+		}
+	}
+});
+</script>
+<style scoped>
+.assistant-welcome {
+	display: flex;
+	flex-direction: row;
+	gap: 14px;
+	align-items: center;
+	margin: 10px 0 18px;
+}
+.assistant-icon {
+	width: 58px;
+	height: 58px;
+	background: #e8f5ed;
+	border-radius: 50%;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.welcome-bubble {
+	padding: 15px;
+	background: #eaf5ee;
+	border-radius: 16px;
+	font-size: 14px;
+	line-height: 1.7;
+}
+.assist-options {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+.assist-option {
+	flex-direction: column;
+	align-items: flex-start;
+	text-align: left;
+	padding: 18px 13px;
+	border-radius: 14px;
+	gap: 12px;
+}
+.assist-option .m-name {
+	font-size: 15px;
+}
+.assist-option .m-sub {
+	font-size: 11px;
+}
+.warm {
+	background: #fff0df;
+}
+.green {
+	background: #eaf5e7;
+}
+.blue {
+	background: #e6f1fc;
+}
+.quick-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+}
+.quick {
+	background: white;
+	border-radius: 24px;
+	border: 1px solid #edf0ea;
+	gap: 7px;
+	font-size: 12px;
+	min-height: 43px;
+}
+.composer {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	padding: 8px;
+	background: white;
+	border: 1px solid #edf0ea;
+	border-radius: 28px;
+}
+.composer .m-input {
+	flex: 1;
+	background: transparent;
+	border: 0;
+	font-size: 13px;
+}
+.quota {
+	font-size: 14px;
+}
+.chat-message {
+	display: flex;
+	flex-direction: row;
+	margin: 12px 0;
+}
+.chat-message.user {
+	justify-content: flex-end;
+}
+.bubble {
+	max-width: 90%;
+	background: white;
+	border-radius: 15px;
+	padding: 14px;
+	line-height: 1.8;
+	white-space: pre-wrap;
+}
+.user .bubble {
+	background: #e2f3e8;
+}
+</style>

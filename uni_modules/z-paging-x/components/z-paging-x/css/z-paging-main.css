@@ -1,0 +1,46 @@
+/* [z-paging-x]公共css*/
+
+.zpx-content {
+  height: 100%;
+}
+
+.zpx-flex1 {
+  flex: 1;
+}
+
+/*
+ * 聊天记录模式通过倒置滚动容器，让scrollTop=0稳定对应聊天底部。
+ * 每条业务记录和组件内置状态节点再反向一次，恢复正常阅读方向。
+ */
+.zpx-chat-list {
+  transform: scaleY(-1);
+}
+
+.zpx-chat-cell {
+  transform: scaleY(-1);
+}
+
+.zpx-back-to-top {
+  width: 76rpx;
+  height: 76rpx;
+  z-index: 999;
+  position: absolute;
+  bottom: 260rpx;
+  right: 25rpx;
+  transition-duration: .3s;
+  transition-property: opacity;
+}
+
+.zpx-back-to-top-show {
+  opacity: 1;
+}
+
+.zpx-back-to-top-hide {
+  opacity: 0;
+}
+
+.zpx-back-to-top-img {
+  width: 100%;
+  height: 100%;
+  z-index: 999;
+}

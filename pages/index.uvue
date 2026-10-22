@@ -1,0 +1,299 @@
+<template>
+	<MPage title="今日">
+		<view class="greeting m-row"
+			><image
+				class="m-avatar"
+				:src="user.info.value?.avatarUrl || asset('profile-avatar.jpg')"
+				mode="aspectFill"
+			/><view class="m-grow"
+				><view class="m-sub">{{ dateLabel }}</view
+				><view class="greeting-title"
+					>{{ greet }}，{{
+						guest ? "欢迎来到毛与叶" : `今天有${today.total}件小事`
+					}}</view
+				></view
+			><button class="message m-plain" aria-label="消息中心" @tap="open('notifications')">
+				<view class="message-icon"
+					><MIcon name="bell" color="muted" :size="24" /><view
+						v-if="today.total"
+						class="message-dot" /></view
+				><text>消息中心</text>
+			</button></view
+		>
+		<view v-if="guest" class="m-demo"
+			><text class="m-demo-label">游客示例 · 开始陪伴日常</text
+			><button class="m-plain" @tap="open('companion')">添加伙伴 ›</button></view
+		>
+		<view v-if="error" class="m-error" @tap="refresh">{{ error }} · 点击重试</view>
+		<view class="m-card today-card"
+			><view class="m-heading">今日待办</view
+			><view v-if="loading" class="m-note">正在整理今天的小事…</view>
+			<view class="todo m-row" v-for="p in waterItems" :key="'p' + p.id"
+				><image
+					class="m-photo todo-image"
+					:src="photo(p)"
+					mode="aspectFill"
+					@tap="plantDetail(p.id)"
+				/><view class="m-grow"
+					><view class="m-name"
+						>{{ p.name }}<text v-if="p.speciesName"> · {{ p.speciesName }}</text></view
+					><view class="m-sub">{{ waterText(p) }}</view></view
+				><button
+					class="m-button small"
+					:disabled="pending.includes(p.id)"
+					@tap="waterPlants([p])"
+				>
+					<MIcon name="water" color="white" :size="15" />浇水
+				</button></view
+			>
+			<view class="todo m-row" v-for="h in healthItems" :key="'h' + h.id"
+				><image
+					class="m-photo todo-image"
+					:src="h.petAvatar || asset('cat-avatar.jpg')"
+					mode="aspectFill"
+				/><view class="m-grow"
+					><view class="m-name">{{ h.petName }}</view
+					><view class="m-sub"
+						>{{ h.itemName }}
+						{{
+							h.daysLeft > 0
+								? "还有" + h.daysLeft + "天"
+								: h.daysLeft === 0
+									? "今天到期"
+									: "已超期"
+						}}</view
+					></view
+				><button
+					class="m-button outline small"
+					@tap="open('pet-records', `petId=${h.petId}&type=${h.type}`)"
+				>
+					去看看
+				</button></view
+			>
+			<view v-if="!loading && !waterItems.length && !healthItems.length" class="m-empty"
+				><MIcon name="check" :size="32" /><view class="m-sub"
+					>今天的小伙伴都照顾好啦</view
+				></view
+			>
+		</view>
+		<view class="m-card friends"
+			><view class="m-between"
+				><text class="m-heading">我的小伙伴</text
+				><button class="m-plain m-link" @tap="open('archives')">
+					全部 <MIcon name="chevron" color="muted" :size="14" /></button></view
+			><view class="friend-grid"
+				><view v-for="f in friends" :key="f.key" class="friend" @tap="visit(f)"
+					><image class="friend-image" :src="f.image" mode="aspectFill" /><view
+						class="friend-copy"
+						><view class="m-name">{{ f.name }}</view
+						><view class="m-sub">{{ f.sub }}</view></view
+					></view
+				></view
+			><view v-if="!friends.length && !loading" class="m-empty"
+				><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-sub"
+					>给每一份陪伴，一个温暖的家</view
+				><button class="m-button full" @tap="open('companion')">
+					添加第一个小伙伴
+				</button></view
+			></view
+		>
+		<button class="m-banner m-plain ai-entry" @tap="open('ask')">
+			<MIcon name="chat" :size="32" /><text class="m-grow">养护问题，问问智慧助手</text
+			><MIcon name="chevron" :size="18" />
+		</button>
+		<MTabbar :active="0" /><view v-if="undoMessage" class="m-undo"
+			><text>{{ undoMessage }}</text
+			><button class="m-plain" @tap="undo">撤销</button></view
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import MTabbar from "@/components/MTabbar.uvue";
+import { useMaoyu, asset, photo, open, waterText, isDue, ageText } from "@/composables/maoyu";
+const {
+	user,
+	guest,
+	today,
+	loading,
+	error,
+	visiblePets,
+	visiblePlants,
+	refresh,
+	waterPlants,
+	pending,
+	undo,
+	undoMessage,
+	selectedPet
+} = useMaoyu();
+const dateLabel = new Date().toLocaleDateString("zh-CN", {
+	month: "long",
+	day: "numeric",
+	weekday: "short"
+});
+const hour = new Date().getHours(),
+	greet = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
+const waterItems = computed(() =>
+	guest.value ? visiblePlants.value.slice(0, 1) : visiblePlants.value.filter(isDue)
+);
+const healthItems = computed(() =>
+	guest.value
+		? [
+				{
+					id: -1,
+					petId: -1,
+					type: 1,
+					petName: "咪咪",
+					petAvatar: asset("cat-avatar.jpg"),
+					itemName: "体外驱虫",
+					daysLeft: 2
+				}
+			]
+		: today.value.health
+);
+const friends = computed(() => [
+	...visiblePets.value
+		.slice(0, 1)
+		.map((p) => ({
+			key: "p" + p.id,
+			id: p.id,
+			kind: "pet",
+			name: p.name,
+			image: photo(p, "pet"),
+			sub: ageText(p.birthday)
+		})),
+	...visiblePlants.value
+		.slice(0, 1)
+		.map((p) => ({
+			key: "l" + p.id,
+			id: p.id,
+			kind: "plant",
+			name: p.name,
+			image: photo(p),
+			sub: waterText(p)
+		}))
+]);
+function plantDetail(id: number) {
+	open("plant-detail", "id=" + id);
+}
+function visit(f: any) {
+	if (f.kind === "pet") {
+		selectedPet.value = f.id;
+		uni.switchTab({ url: "/pages/pet" });
+	} else plantDetail(f.id);
+}
+onShow(refresh);
+</script>
+<style scoped>
+.greeting {
+	margin: 18px 0 12px;
+	gap: 12px;
+}
+.greeting-title {
+	font-size: 16px;
+	color: #202a25;
+	font-weight: 650;
+	margin-top: 3px;
+}
+.greeting .m-avatar {
+	width: 48px;
+	height: 48px;
+}
+.message {
+	flex-direction: column;
+	gap: 3px;
+	font-size: 10px;
+	color: #888;
+}
+.message-icon {
+	border: 1px solid #e7e9e5;
+	border-radius: 50%;
+	width: 40px;
+	height: 40px;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+}
+.message-dot {
+	position: absolute;
+	right: 6px;
+	top: 4px;
+	width: 7px;
+	height: 7px;
+	background: #48aa7b;
+	border-radius: 50%;
+}
+.today-card {
+	padding: 12px 14px;
+}
+.todo {
+	padding: 10px 0;
+	border-bottom: 1px solid #eef0ec;
+	gap: 12px;
+	min-height: 94px;
+}
+.todo:last-child {
+	border: 0;
+}
+.todo-image {
+	width: 94px;
+	height: 76px;
+	border-radius: 9px;
+}
+.todo .m-name {
+	font-size: 15px;
+}
+.todo .m-sub {
+	margin-top: 5px;
+}
+.todo .m-button {
+	padding: 7px 12px;
+	flex-shrink: 0;
+}
+.friend-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+.friends {
+	padding: 10px 14px 14px;
+}
+.friend {
+	border: 1px solid #eaede7;
+	border-radius: 12px;
+	overflow: hidden;
+}
+.friend-image {
+	width: 100%;
+	height: 120px;
+	display: block;
+}
+.friend-copy {
+	padding: 6px 10px;
+}
+.friend-copy .m-sub {
+	margin-top: 3px;
+}
+.ai-entry {
+	width: 100%;
+	text-align: left;
+	font-size: 14px;
+	margin-top: 14px;
+}
+@media (max-width: 360px) {
+	.todo-image {
+		width: 70px;
+		height: 70px;
+	}
+	.todo {
+		gap: 8px;
+	}
+	.greeting-title {
+		font-size: 14px;
+	}
+}
+</style>

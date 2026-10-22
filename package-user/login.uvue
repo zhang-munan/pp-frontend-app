@@ -1,0 +1,350 @@
+<template>
+	<view class="login-page" :style="{ '--login-unit': unit + 'px' }">
+		<text class="login-title">登录</text>
+		<image
+			class="login-hero"
+			:src="art('hero')"
+			mode="scaleToFill"
+			aria-label="毛与叶，留住每一次用心照顾。登录后保存档案与记录。猫咪在绿植旁安睡。"
+		/>
+		<view class="login-benefits">
+			<text class="login-benefits-title">登录后你可以</text>
+			<view class="login-benefits-grid">
+				<view v-for="benefit in benefits" :key="benefit.image" class="login-benefit">
+					<image class="login-benefit-icon" :src="art(benefit.image)" mode="aspectFit" />
+					<text class="login-benefit-copy">{{ benefit.text }}</text>
+				</view>
+			</view>
+		</view>
+		<view class="login-agreement">
+			<button
+				class="login-check"
+				role="checkbox"
+				:aria-checked="agreed"
+				aria-label="同意用户协议与隐私政策"
+				@tap="agreed = !agreed"
+			>
+				<view class="login-check-circle" :class="{ checked: agreed }"
+					><text v-if="agreed">✓</text></view
+				>
+			</button>
+			<text class="login-agreement-copy" @tap="agreed = !agreed">我已阅读并同意</text>
+			<button class="login-legal" @tap="open('legal-document', 'type=user_agreement')">
+				用户协议
+			</button>
+			<text class="login-agreement-copy login-and">与</text>
+			<button class="login-legal" @tap="open('legal-document', 'type=privacy_policy')">
+				隐私政策
+			</button>
+		</view>
+		<button class="login-wechat" :disabled="!agreed || busy" @tap="wechatLogin">
+			<image class="login-wechat-icon" :src="asset('login/wechat.svg')" mode="aspectFit" />
+			<text class="login-wechat-label">{{ busy ? "正在登录…" : "微信登录" }}</text>
+		</button>
+		<button class="login-browse" :disabled="busy" @tap="back">暂不登录，继续浏览</button>
+		<image
+			class="login-footer"
+			:src="art('footer')"
+			mode="scaleToFill"
+			aria-label="和毛孩子，一起遇见更好的生活"
+		/>
+	</view>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import { useStore } from "@/.cool";
+import { loginByMiniCode } from "@/api/user";
+import { asset, open } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+// #ifdef H5
+import { wxHelper, ensureWechatMpSilentLogin } from "@/.cool/hooks/wx";
+// #endif
+
+const unit = ref(Math.min(uni.getSystemInfoSync().windowWidth, 480) / 852);
+const agreed = ref(false),
+	busy = ref(false);
+// #ifdef H5
+const oauthPendingKey = "maoyu_explicit_login_pending";
+onLoad(async () => {
+	if (!wxHelper.isWxBrowser() || sessionStorage.getItem(oauthPendingKey) !== "1") return;
+	sessionStorage.removeItem(oauthPendingKey);
+	busy.value = true;
+	try {
+		if (await ensureWechatMpSilentLogin()) {
+			await useStore().user.get();
+			back();
+		} else {
+			uni.showToast({ title: "微信登录未完成，请重试", icon: "none" });
+		}
+	} finally {
+		busy.value = false;
+	}
+});
+// #endif
+const benefits = [
+	{ image: "benefit-pet", text: "保存毛孩子\n成长档案" },
+	{ image: "benefit-plant", text: "记录植物\n养护日记" },
+	{ image: "benefit-cloud", text: "多设备同步\n数据不丢失" },
+	{ image: "benefit-heart", text: "让美好生活\n一直延续" }
+];
+const art = (name: string) => asset("login/" + name + ".png");
+onResize((event) => {
+	unit.value = Math.min(event.size.windowWidth, 480) / 852;
+});
+
+async function wechatLogin() {
+	if (!agreed.value || busy.value) return;
+	// Ordinary browsers keep the existing phone/password login as a secondary flow.
+	// #ifdef H5
+	if (!wxHelper.isWxBrowser()) {
+		uni.showModal({
+			title: "请在微信中打开",
+			content: "微信登录需要微信环境，也可以继续使用手机号登录。",
+			confirmText: "手机号登录",
+			cancelText: "取消",
+			success: (result) => {
+				if (result.confirm) open("login-phone");
+			}
+		});
+		return;
+	}
+	// #endif
+	busy.value = true;
+	try {
+		// #ifdef MP-WEIXIN
+		const code = await new Promise<string>((resolve, reject) => {
+			uni.login({
+				provider: "weixin",
+				success: (result) => {
+					if (result.code) resolve(result.code);
+					else reject(new Error("未获取到微信登录凭证，请重试"));
+				},
+				fail: reject
+			});
+		});
+		const token = await loginByMiniCode(code);
+		if (!token?.token) throw new Error("微信登录失败，请重试");
+		const { user } = useStore();
+		user.setToken(token);
+		await user.get();
+		back();
+		// #endif
+		// #ifdef H5
+		sessionStorage.setItem(oauthPendingKey, "1");
+		await wxHelper.mpAuth();
+		// #endif
+		// #ifndef H5 || MP-WEIXIN
+		throw new Error("请在微信中打开后登录");
+		// #endif
+	} catch (error) {
+		// #ifdef H5
+		sessionStorage.removeItem(oauthPendingKey);
+		// #endif
+		uni.showToast({ title: errorMessage(error), icon: "none" });
+	} finally {
+		busy.value = false;
+	}
+}
+function back() {
+	if (getCurrentPages().length > 1) uni.navigateBack();
+	else uni.switchTab({ url: "/pages/index" });
+}
+</script>
+<style scoped>
+.login-page {
+	position: relative;
+	width: 100%;
+	max-width: 480px;
+	height: calc(1846 * var(--login-unit));
+	min-height: 100vh;
+	margin: 0 auto;
+	overflow: hidden;
+	background: #fafaf8;
+	color: #14161e;
+	font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.login-title {
+	position: absolute;
+	top: calc(108 * var(--login-unit));
+	left: calc(51 * var(--login-unit));
+	font-size: calc(52 * var(--login-unit));
+	font-weight: 700;
+	line-height: 1.25;
+	letter-spacing: calc(2 * var(--login-unit));
+}
+.login-hero {
+	position: absolute;
+	top: calc(200 * var(--login-unit));
+	left: 0;
+	width: 100%;
+	height: calc(850 * var(--login-unit));
+}
+.login-benefits {
+	position: absolute;
+	top: calc(949 * var(--login-unit));
+	left: calc(39 * var(--login-unit));
+	right: calc(39 * var(--login-unit));
+	height: calc(326 * var(--login-unit));
+	border-radius: calc(36 * var(--login-unit));
+	background: #fff;
+	box-shadow: 0 calc(10 * var(--login-unit)) calc(35 * var(--login-unit)) #c5c9c412;
+}
+.login-benefits-title {
+	position: absolute;
+	top: calc(35 * var(--login-unit));
+	left: calc(39 * var(--login-unit));
+	font-size: calc(32 * var(--login-unit));
+	font-weight: 650;
+	line-height: 1.4;
+}
+.login-benefits-grid {
+	position: absolute;
+	top: calc(96 * var(--login-unit));
+	left: calc(13 * var(--login-unit));
+	right: calc(13 * var(--login-unit));
+	display: flex;
+	flex-direction: row;
+}
+.login-benefit {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+.login-benefit-icon {
+	width: calc(108 * var(--login-unit));
+	height: calc(108 * var(--login-unit));
+	border-radius: 50%;
+}
+.login-benefit-copy {
+	display: block;
+	margin-top: calc(15 * var(--login-unit));
+	font-size: calc(25 * var(--login-unit));
+	line-height: 1.4;
+	white-space: pre-line;
+	text-align: center;
+	font-weight: 400;
+}
+.login-agreement {
+	position: absolute;
+	top: calc(1320 * var(--login-unit));
+	left: 0;
+	width: 100%;
+	height: calc(60 * var(--login-unit));
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.login-check,
+.login-legal,
+.login-wechat,
+.login-browse {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	line-height: 1.4;
+}
+.login-check::after,
+.login-legal::after,
+.login-wechat::after,
+.login-browse::after {
+	border: none !important;
+}
+.login-check {
+	width: calc(60 * var(--login-unit));
+	height: calc(60 * var(--login-unit));
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: calc(2 * var(--login-unit));
+}
+.login-check-circle {
+	width: calc(35 * var(--login-unit));
+	height: calc(35 * var(--login-unit));
+	box-sizing: border-box;
+	border: calc(1.7 * var(--login-unit)) solid #96969a;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.login-check-circle.checked {
+	background: #219563;
+	border-color: #219563;
+}
+.login-check-circle text {
+	color: #fff;
+	font-size: calc(26 * var(--login-unit));
+	line-height: 1;
+}
+.login-agreement-copy,
+.login-legal {
+	font-size: calc(24 * var(--login-unit));
+	font-weight: 400;
+	white-space: nowrap;
+	color: #3b3d43;
+}
+.login-legal {
+	color: #159663;
+	text-decoration: underline;
+	text-underline-offset: calc(3 * var(--login-unit));
+	margin-left: calc(8 * var(--login-unit));
+	border-radius: 0;
+}
+.login-and {
+	margin-left: calc(8 * var(--login-unit));
+}
+.login-wechat,
+.login-browse {
+	position: absolute;
+	left: calc(67 * var(--login-unit));
+	right: calc(67 * var(--login-unit));
+	border-radius: calc(55 * var(--login-unit));
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.login-wechat {
+	top: calc(1402 * var(--login-unit));
+	height: calc(99 * var(--login-unit));
+	background: #239c6a;
+	color: #fff;
+	gap: calc(20 * var(--login-unit));
+}
+.login-wechat[disabled] {
+	background: #bfd2c8;
+	color: #fff;
+	opacity: 1;
+}
+.login-wechat-icon {
+	width: calc(58 * var(--login-unit));
+	height: calc(50 * var(--login-unit));
+}
+.login-wechat-label {
+	font-size: calc(36 * var(--login-unit));
+	font-weight: 600;
+	line-height: 1.4;
+	color: #fff;
+}
+.login-browse {
+	top: calc(1522 * var(--login-unit));
+	height: calc(92 * var(--login-unit));
+	border: calc(1.5 * var(--login-unit)) solid #c8c8cb;
+	color: #79797d;
+	font-size: calc(28 * var(--login-unit));
+	letter-spacing: calc(1 * var(--login-unit));
+}
+.login-footer {
+	position: absolute;
+	top: calc(1616 * var(--login-unit));
+	left: 0;
+	width: 100%;
+	height: calc(230 * var(--login-unit));
+}
+</style>

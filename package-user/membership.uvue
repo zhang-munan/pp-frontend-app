@@ -1,0 +1,91 @@
+<template>
+	<MPage title="毛与叶 Plus" back
+		><view class="plus-hero"
+			><MIcon name="crown" color="amber" :size="50" /><view class="m-heading"
+				>让陪伴多一点从容</view
+			><view class="m-sub">更多记录空间，更多美好回忆</view></view
+		><view class="m-card"
+			><view class="m-heading">Plus 权益</view
+			><view class="benefit" v-for="item in benefits" :key="item"
+				><MIcon name="check" :size="18" /><text>{{ item }}</text></view
+			></view
+		><view class="prices"
+			><button
+				v-for="p in plans"
+				:key="p.name"
+				class="price m-plain"
+				:class="{ selected: plan === p.name }"
+				@tap="plan = p.name"
+			>
+				<text>{{ p.name }}</text
+				><text class="amount">¥{{ p.price }}</text
+				><text class="m-sub">{{ p.note }}</text>
+			</button></view
+		><view class="m-card m-section"
+			><view class="m-name">会员购买即将开放</view
+			><view class="m-sub"
+				>以上为计划权益与价格。正式开放后即可购买，当前不收取费用。</view
+			></view
+		></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+const plan = ref("年卡"),
+	plans = [
+		{ name: "月卡", price: 6, note: "一次性购买" },
+		{ name: "年卡", price: 15, note: "首年优惠 · 常规 ¥25" },
+		{ name: "终身卡", price: 48, note: "限量早鸟" }
+	],
+	benefits = [
+		"宠物与植物档案数量不限",
+		"更多 AI 养护咨询",
+		"电子疫苗本导出",
+		"年度报告美化与专属皮肤"
+	];
+</script>
+<style scoped>
+.plus-hero {
+	background: #fff4d9;
+	border-radius: 16px;
+	padding: 28px 16px;
+	text-align: center;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+.benefit {
+	display: flex;
+	flex-direction: row;
+	gap: 10px;
+	margin-top: 18px;
+}
+.prices {
+	display: flex;
+	flex-direction: row;
+	gap: 9px;
+}
+.price {
+	flex: 1;
+	flex-direction: column;
+	gap: 8px;
+	border: 1px solid #e9e8df;
+	border-radius: 12px;
+	padding: 18px 4px;
+	background: #fff;
+}
+.price.selected {
+	border-color: #d8ae45;
+	background: #fff8e8;
+}
+.price .m-sub {
+	font-size: 9px;
+}
+.amount {
+	font-size: 29px;
+	color: #b88a2b;
+	font-weight: 650;
+}
+</style>

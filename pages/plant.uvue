@@ -1,0 +1,336 @@
+<template>
+	<MPage title="绿叶子">
+		<view v-if="guest" class="m-demo"
+			><text class="m-demo-label">示例植物 · 登录后开启养护</text
+			><button class="m-plain" @tap="login">去登录 ›</button></view
+		>
+		<view class="plant-actions"
+			><button class="m-button" @tap="open('plant-form', 'mode=photo')">
+				<MIcon name="camera" color="white" />拍照添加</button
+			><button class="m-button outline" @tap="open('plant-form', 'mode=search')">
+				<MIcon name="search" />搜索添加
+			</button></view
+		>
+		<view class="calendar-row"
+			><view class="week-card m-card"
+				><view class="m-between"
+					><text class="month">{{ monthLabel }}</text
+					><view class="m-row"
+						><button class="m-plain" aria-label="上一周" @tap="weekOffset--">
+							<MIcon name="back" color="muted" :size="14" /></button
+						><button class="m-plain" aria-label="下一周" @tap="weekOffset++">
+							<MIcon name="chevron" color="muted" :size="14" /></button></view></view
+				><view class="week"
+					><view v-for="(d, i) in week" :key="d.key"
+						><text class="weekday">{{ "一二三四五六日"[i] }}</text
+						><button
+							class="m-plain day"
+							:class="{ selected: selectedDate === d.key }"
+							@tap="selectedDate = d.key"
+						>
+							{{ d.day }}
+						</button></view
+					></view
+				></view
+			><view class="calendar-art"
+				><text>每一片绿叶\n都是生活的诗</text
+				><image :src="asset('cat-leaves.png')" mode="aspectFit" /></view
+		></view>
+		<view class="water-summary"
+			><MIcon name="water" color="amber" :size="28" /><view class="m-grow"
+				>{{ selectedDate === dateKey() ? "今天" : "所选日期"
+				}}{{ due.length ? "还需浇水" : "暂无待浇水" }}
+				<text v-if="due.length" class="sum-number">{{ due.length }}</text
+				><text v-if="due.length"> 盆</text></view
+			><button
+				v-if="due.length && selectedDate === dateKey()"
+				class="m-plain"
+				:disabled="!!pending.length"
+				@tap="waterPlants(due)"
+			>
+				全部打卡 <MIcon name="chevron" color="muted" :size="16" /></button
+		></view>
+		<view v-if="error" class="m-error" @tap="refresh">{{ error }} · 点击重试</view>
+		<view class="plant-card m-card m-row" v-for="p in visiblePlants" :key="p.id"
+			><image
+				class="plant-image m-photo"
+				:src="photo(p)"
+				mode="aspectFill"
+				@tap="open('plant-detail', 'id=' + p.id)"
+			/><view class="m-grow" @tap="open('plant-detail', 'id=' + p.id)"
+				><view class="m-name">{{ p.name }}</view
+				><view class="m-sub"
+					>{{ p.speciesName || "绿植" }} · {{ LOCATION_NAMES[p.location] }}</view
+				><view
+					class="plant-status"
+					:class="
+						(daysFromToday(p.nextWaterDate) || 0) < 0
+							? 'm-red'
+							: isDue(p)
+								? 'm-amber'
+								: ''
+					"
+					>{{ waterText(p) }}</view
+				></view
+			><button
+				class="water-action m-plain"
+				:disabled="pending.includes(p.id)"
+				:aria-label="'为' + p.name + '浇水'"
+				@tap="isDue(p) ? waterPlants([p]) : open('plant-detail', 'id=' + p.id)"
+			>
+				<view class="water-circle" :class="{ later: !isDue(p) }"
+					><MIcon
+						:name="isDue(p) ? 'water' : 'calendar'"
+						color="white"
+						:size="26" /></view
+				><text :class="{ later: !isDue(p) }">{{ isDue(p) ? "去浇水" : "查看养护" }}</text>
+			</button></view
+		>
+		<view v-if="!visiblePlants.length && !loading" class="m-card m-empty"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-name"
+				>生活，添一点绿</view
+			><view class="m-sub">添加第一株植物，记录它的每一次生长</view
+			><button class="m-button full" @tap="open('plant-form')">添加植物</button></view
+		>
+		<button class="m-banner guide-banner m-plain" @tap="open('plant-guide')">
+			<MIcon name="book" :size="30" /><view class="m-grow"
+				><view class="m-name">植物养护小攻略</view
+				><view class="m-sub">不同季节的浇水技巧，让植物长得更好</view></view
+			><MIcon name="chevron" :size="20" />
+		</button>
+		<view v-if="undoMessage" class="m-undo"
+			><text>{{ undoMessage }}</text
+			><button class="m-plain" :disabled="!!pending.length" @tap="undo">撤销</button></view
+		><MTabbar :active="2" />
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import MTabbar from "@/components/MTabbar.uvue";
+import { LOCATION_NAMES } from "@/api/plant";
+import {
+	useMaoyu,
+	asset,
+	photo,
+	open,
+	login,
+	waterText,
+	isDue,
+	dateKey,
+	daysFromToday
+} from "@/composables/maoyu";
+const { guest, visiblePlants, loading, error, refresh, waterPlants, undo, undoMessage, pending } =
+	useMaoyu();
+const weekOffset = ref(0),
+	selectedDate = ref(dateKey());
+const week = computed(() => {
+	const d = new Date();
+	d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + weekOffset.value * 7);
+	return Array.from({ length: 7 }, (_, i) => {
+		const x = new Date(d);
+		x.setDate(d.getDate() + i);
+		return { day: x.getDate(), key: dateKey(x) };
+	});
+});
+const monthLabel = computed(() => {
+	const d = new Date(week.value[3].key + "T12:00:00");
+	return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+});
+const due = computed(() =>
+	visiblePlants.value.filter((p) =>
+		selectedDate.value === dateKey()
+			? isDue(p)
+			: p.nextWaterDate?.slice(0, 10) === selectedDate.value
+	)
+);
+onShow(refresh);
+</script>
+<style scoped>
+.plant-actions {
+	display: flex;
+	flex-direction: row;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+.plant-actions button {
+	flex: 1;
+	font-size: 16px;
+	padding: 9px 5px;
+}
+.calendar-row {
+	display: flex;
+	flex-direction: row;
+	gap: 12px;
+	height: 124px;
+	margin-bottom: 12px;
+}
+.week-card {
+	width: 68%;
+	padding: 8px 13px;
+	margin: 0;
+}
+.month {
+	font-size: 14px;
+	font-weight: 600;
+}
+.week-card .m-row {
+	gap: 10px;
+}
+.week-card .m-plain {
+	min-height: 30px;
+}
+.week {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	text-align: center;
+	margin-top: 5px;
+}
+.weekday {
+	font-size: 11px;
+	color: #8a8c90;
+}
+.day {
+	width: 28px;
+	height: 30px;
+	margin-top: 7px;
+	font-size: 12px;
+}
+.day.selected {
+	border-radius: 50%;
+	background: #36a576;
+	color: white;
+}
+.calendar-art {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+}
+.calendar-art text {
+	font-size: 14px;
+	font-style: italic;
+	color: #499771;
+	white-space: pre-line;
+	position: relative;
+	z-index: 1;
+	display: block;
+	transform: rotate(-7deg);
+	padding-top: 10px;
+}
+.calendar-art image {
+	position: absolute;
+	bottom: -10px;
+	right: -15px;
+	width: 135px;
+	height: 95px;
+	opacity: 0.75;
+}
+.water-summary {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 10px;
+	background: #fff4dc;
+	border-radius: 14px;
+	padding: 8px 13px;
+	margin-bottom: 10px;
+	min-height: 51px;
+	color: #303831;
+	font-size: 14px;
+}
+.sum-number {
+	color: #ed9b23;
+	font-size: 24px;
+}
+.water-summary button {
+	font-size: 12px;
+	gap: 6px;
+}
+.plant-card {
+	padding: 8px;
+	gap: 12px;
+	min-height: 109px;
+	margin-bottom: 10px;
+}
+.plant-image {
+	width: 108px;
+	height: 94px;
+	border-radius: 11px;
+}
+.plant-card .m-name {
+	font-size: 18px;
+}
+.plant-card .m-sub {
+	margin-top: 3px;
+}
+.plant-status {
+	font-size: 14px;
+	margin-top: 7px;
+	color: #858b88;
+}
+.plant-status.m-red {
+	color: #e74c4c;
+}
+.plant-status.m-amber {
+	color: #ed9720;
+}
+.water-action {
+	flex-direction: column;
+	gap: 5px;
+	min-width: 62px;
+}
+.water-circle {
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	background: #ffae2f;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.water-action text {
+	padding: 3px 9px;
+	border-radius: 20px;
+	background: #fff3d9;
+	color: #ed9720;
+	font-size: 11px;
+}
+.water-circle.later {
+	background: #4bae7e;
+}
+.water-action text.later {
+	background: #edf7ee;
+	color: #329e6b;
+}
+.guide-banner {
+	width: 100%;
+	text-align: left;
+	padding: 13px 12px;
+	gap: 10px;
+}
+.guide-banner .m-name {
+	font-size: 16px;
+}
+.guide-banner .m-sub {
+	font-size: 10px;
+	margin-top: 3px;
+}
+@media (max-width: 360px) {
+	.plant-image {
+		width: 84px;
+		height: 88px;
+	}
+	.plant-card {
+		gap: 8px;
+	}
+	.plant-card .m-name {
+		font-size: 16px;
+	}
+	.plant-actions button {
+		font-size: 14px;
+	}
+}
+</style>

@@ -1,0 +1,200 @@
+{
+  "pages": [
+    {
+      "path": "pages/index",
+      "style": {
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/pet",
+      "style": {
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/plant",
+      "style": {
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/mine",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTextStyle": "black"
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "package-user",
+      "pages": [
+        {
+          "path": "login",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "change-phone",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "settings",
+          "style": {
+            "navigationStyle": "custom",
+            "navigationBarTextStyle": "black"
+          }
+        },
+        {
+          "path": "profile",
+          "style": {
+            "navigationStyle": "custom",
+            "navigationBarTextStyle": "black"
+          }
+        },
+        {
+          "path": "blacklist",
+          "style": {
+            "navigationStyle": "custom",
+            "navigationBarTextStyle": "black"
+          }
+        },
+        {
+          "path": "legal-document",
+          "style": {
+            "navigationStyle": "custom",
+            "navigationBarTextStyle": "black"
+          }
+        },
+        {
+          "path": "ask",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "pet-records",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-detail",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "companion",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "pet-form",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-form",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "health-form",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "archives",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "notifications",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "plant-guide",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "account-settings",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "help",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "membership",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "feature-info",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "login-phone",
+          "style": {
+            "navigationStyle": "custom"
+          }
+        }
+      ]
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTitleText": "毛与叶",
+    "navigationBarTextStyle": "@navTextStyle",
+    "backgroundColorContent": "@bgContentColor",
+    "backgroundColor": "@bgColor",
+    "navigationBarBackgroundColor": "@navBgColor",
+    "navigationStyle": "custom"
+  },
+  "uniIdRouter": {},
+  "tabBar": {
+    "custom": false,
+    "color": "#999999",
+    "selectedColor": "#4CAF7D",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index",
+        "text": "今日"
+      },
+      {
+        "pagePath": "pages/pet",
+        "text": "毛孩子"
+      },
+      {
+        "pagePath": "pages/plant",
+        "text": "绿叶子"
+      },
+      {
+        "pagePath": "pages/mine",
+        "text": "我的"
+      }
+    ]
+  }
+}

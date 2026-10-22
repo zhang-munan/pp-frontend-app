@@ -1,0 +1,198 @@
+<template>
+	<MPage title="我的">
+		<view class="m-card profile-card"
+			><button
+				class="m-row m-plain profile-top"
+				@tap="guest ? login() : open('account-settings')"
+			>
+				<image
+					class="m-avatar"
+					:src="user.info.value?.avatarUrl || asset('profile-avatar.jpg')"
+					mode="aspectFill"
+				/><view class="m-grow"
+					><view class="profile-name"
+						>{{ guest ? "点击登录" : user.info.value?.nickName || "我的小天地" }}
+						<MIcon name="leaf" :size="20" /></view
+					><view class="m-sub">和毛孩子，一起过更温柔的日常</view></view
+				></button
+			><view class="profile-stats"
+				><view
+					><text class="m-sub">陪伴</text
+					><view
+						><text class="stat">{{ guest ? "—" : companionDays }}</text
+						><text class="stat-unit"> 天</text></view
+					></view
+				><view
+					><text class="m-sub">小伙伴</text
+					><view class="stat">{{ guest ? "—" : pets.length + plants.length }}</view></view
+				><view
+					><text class="m-sub">打卡</text
+					><view class="stat">{{ guest ? "—" : (checkins ?? "—") }}</view></view
+				></view
+			></view
+		>
+		<button class="plus-card m-plain" @tap="open('membership')">
+			<MIcon name="crown" color="amber" :size="38" /><view class="m-grow"
+				><view class="m-name">毛与叶 <text class="plus-word">Plus</text></view
+				><view class="plus-sub">让陪伴多一点从容</view></view
+			><MIcon name="chevron" color="muted" :size="20" />
+		</button>
+		<view class="m-card menu"
+			><button
+				v-for="m in firstMenus"
+				:key="m.name"
+				class="m-plain m-menu-row"
+				@tap="open(m.path, m.query || '')"
+			>
+				<MIcon :name="m.icon" :size="23" /><text>{{ m.name }}</text
+				><MIcon name="chevron" color="muted" :size="16" /></button
+		></view>
+		<view class="m-card menu"
+			><button
+				v-for="m in secondMenus"
+				:key="m.name"
+				class="m-plain m-menu-row"
+				@tap="open(m.path, m.query || '')"
+			>
+				<MIcon :name="m.icon" :size="23" /><text>{{ m.name }}</text
+				><MIcon name="chevron" color="muted" :size="16" /></button
+		></view>
+		<view class="m-footer-art"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><text
+				>以温柔之名\n陪伴更好的生活</text
+			></view
+		><MTabbar :active="3" />
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import MTabbar from "@/components/MTabbar.uvue";
+import { healthList } from "@/api/pet";
+import { careTimeline } from "@/api/plant";
+import { useMaoyu, asset, open, login, daysFromToday } from "@/composables/maoyu";
+const { guest, user, pets, plants, refresh } = useMaoyu(),
+	checkins = ref<number | null>(null);
+const companionDays = computed(() => {
+	const dates = [...pets.value, ...plants.value]
+		.map((p) => p.arriveDate)
+		.filter(Boolean)
+		.sort();
+	return dates.length ? Math.max(1, 1 - (daysFromToday(dates[0]) || 0)) : 0;
+});
+const firstMenus = [
+	{ name: "我的档案", icon: "user", path: "archives" },
+	{ name: "家庭共享", icon: "group", path: "feature-info", query: "kind=family" },
+	{ name: "消息设置", icon: "bell", path: "account-settings", query: "section=notifications" },
+	{ name: "年度报告", icon: "file", path: "feature-info", query: "kind=annual" }
+];
+const secondMenus = [
+	{ name: "数据导出", icon: "chart", path: "feature-info", query: "kind=export" },
+	{ name: "帮助反馈", icon: "help", path: "help" },
+	{ name: "设置", icon: "settings", path: "account-settings" }
+];
+onShow(async () => {
+	await refresh();
+	checkins.value = null;
+	if (guest.value) return;
+	try {
+		const lists = await Promise.all([
+			...pets.value.map((p) => healthList(p.id)),
+			...plants.value.map((p) => careTimeline(p.id))
+		]);
+		checkins.value = lists.reduce((n, l) => n + (l?.length || 0), 0);
+	} catch (e) {
+		checkins.value = null;
+	}
+});
+</script>
+<style scoped>
+.profile-card {
+	padding: 16px 16px 12px;
+}
+.profile-top {
+	width: 100%;
+	text-align: left;
+	justify-content: flex-start;
+}
+.profile-top .m-avatar {
+	width: 70px;
+	height: 70px;
+}
+.profile-name {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	font-size: 20px;
+	font-weight: 650;
+	margin-bottom: 8px;
+}
+.profile-top .m-sub {
+	font-size: 11px;
+}
+.profile-stats {
+	display: flex;
+	flex-direction: row;
+	text-align: center;
+	border-top: 1px solid #eef0ea;
+	margin-top: 16px;
+	padding-top: 13px;
+}
+.profile-stats > view {
+	flex: 1;
+	border-right: 1px solid #edf0ea;
+}
+.profile-stats > view:last-child {
+	border: 0;
+}
+.stat {
+	font-size: 27px;
+	font-weight: 650;
+	color: #28a070;
+	line-height: 1.5;
+}
+.plus-card {
+	width: 100%;
+	border-radius: 14px;
+	background: #fff5da;
+	gap: 16px;
+	padding: 13px 18px;
+	text-align: left;
+	margin-bottom: 12px;
+	min-height: 64px;
+}
+.plus-card .m-name {
+	font-size: 18px;
+}
+.plus-word {
+	color: #bd941f;
+}
+.plus-sub {
+	font-size: 12px;
+	color: #b29459;
+}
+.menu {
+	padding: 0 16px;
+}
+.menu .m-menu-row {
+	min-height: 48px;
+}
+.menu .m-menu-row text {
+	font-size: 16px;
+}
+.m-footer-art {
+	margin-top: 17px;
+}
+.m-footer-art text {
+	white-space: pre-line;
+	font-size: 13px;
+	line-height: 1.8;
+}
+.stat-unit {
+	display: inline;
+	font-size: 12px;
+	color: #888d90;
+}
+</style>

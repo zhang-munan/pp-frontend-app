@@ -1,0 +1,61 @@
+<template>
+	<MPage title="消息中心" back
+		><view class="m-card m-row"
+			><MIcon name="bell" :size="26" /><view class="m-grow"
+				><view class="m-name">不错过每一次照顾</view
+				><view class="m-sub">{{
+					guest ? "登录后查看你的提醒" : "当前养护与健康提醒"
+				}}</view></view
+			><button
+				class="m-plain m-green"
+				@tap="open('account-settings', 'section=notifications')"
+			>
+				设置
+			</button></view
+		><view v-if="error" class="m-error" @tap="refresh">{{ error }} · 重试</view
+		><button
+			class="m-card notification m-plain"
+			v-for="p in visiblePlants.filter(isDue)"
+			:key="'p' + p.id"
+			@tap="open('plant-detail', 'id=' + p.id)"
+		>
+			<MIcon name="water" color="amber" :size="30" /><view class="m-grow"
+				><view class="m-name">{{ p.name }}的浇水提醒</view
+				><view class="m-sub">{{ waterText(p) }} · 请先检查土壤干湿</view></view
+			><MIcon name="chevron" color="muted" :size="16" /></button
+		><button
+			class="m-card notification m-plain"
+			v-for="h in today.health"
+			:key="h.id"
+			@tap="open('pet-records', `petId=${h.petId}&type=${h.type}`)"
+		>
+			<MIcon name="paw" :size="30" /><view class="m-grow"
+				><view class="m-name">{{ h.petName }} · {{ h.itemName }}</view
+				><view class="m-sub">下次 {{ h.nextDate }}</view></view
+			><MIcon name="chevron" color="muted" :size="16" /></button
+		><view v-if="guest" class="m-note">以上为示例养护提醒</view
+		><view v-else-if="!today.total" class="m-empty"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-sub"
+				>暂时没有新的提醒</view
+			></view
+		></MPage
+	>
+</template>
+<script setup lang="ts">
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { useMaoyu, asset, open, isDue, waterText } from "@/composables/maoyu";
+const { guest, visiblePlants, today, error, refresh } = useMaoyu();
+onShow(refresh);
+</script>
+<style scoped>
+.notification {
+	width: 100%;
+	gap: 12px;
+	text-align: left;
+	justify-content: flex-start;
+}
+.notification .m-name {
+	font-size: 16px;
+}
+</style>

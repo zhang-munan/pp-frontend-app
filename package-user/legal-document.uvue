@@ -1,0 +1,28 @@
+<template>
+	<MPage :title="kind === 'privacy_policy' ? '隐私政策' : '用户协议'" back
+		><view class="m-card"
+			><view v-if="loading" class="m-sub">正在读取…</view
+			><rich-text v-else-if="content" :nodes="content" /><view v-else class="m-sub"
+				>协议内容暂未发布，请稍后再试。你仍可浏览示例档案和养护页面。</view
+			></view
+		></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import { legalContent } from "@/api/legal";
+const kind = ref("user_agreement"),
+	content = ref(""),
+	loading = ref(true);
+onLoad(async (o) => {
+	kind.value = String(o?.type || "user_agreement");
+	try {
+		content.value = await legalContent(kind.value);
+	} catch (e) {
+		content.value = "";
+	} finally {
+		loading.value = false;
+	}
+});
+</script>

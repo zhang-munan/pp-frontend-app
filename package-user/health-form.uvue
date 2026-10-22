@@ -1,0 +1,215 @@
+<template>
+	<MPage :title="title" back
+		><view v-if="pet" class="m-card m-row"
+			><image class="m-avatar" :src="photo(pet, 'pet')" mode="aspectFill" /><text
+				class="m-name"
+				>{{ pet.name }}</text
+			><text v-if="petId < 0" class="m-sub">示例档案</text></view
+		>
+		<view class="m-card"
+			><text class="m-label">{{
+				type === 2
+					? "体重（kg）"
+					: type === 0
+						? "疫苗类型"
+						: type === 1
+							? "驱虫类型"
+							: type === 5
+								? "今天记录什么"
+								: "记录内容"
+			}}</text
+			><view v-if="presets.length" class="m-choices"
+				><button
+					v-for="item in presets"
+					:key="item"
+					class="m-choice"
+					:class="{ selected: (type === 1 ? form.subType : form.itemName) === item }"
+					@tap="pick(item)"
+				>
+					{{ item }}
+				</button></view
+			><input
+				v-if="type === 2"
+				type="digit"
+				class="m-input weight-input"
+				placeholder="0.0"
+				v-model="form.value" /><input
+				v-else
+				class="m-input record-input"
+				:placeholder="
+					type === 1
+						? '药品品牌 / 名称'
+						: type === 3
+							? '药名、剂量、频次与疗程'
+							: type === 4
+								? '医院 / 诊断'
+								: '名称或自定义内容'
+				"
+				v-model="form.itemName"
+				maxlength="100"
+		/></view>
+		<view class="m-card"
+			><text class="m-label">{{ type === 0 ? "接种日期" : "记录日期" }}</text
+			><picker
+				mode="date"
+				:end="dateKey()"
+				:value="form.occurDate"
+				@change="setDate($event.detail.value)"
+				><view class="m-input m-between"
+					>{{ form.occurDate
+					}}<MIcon name="calendar" color="muted" :size="20" /></view></picker
+		></view>
+		<view v-if="type === 0 || type === 1" class="m-card"
+			><text class="m-label">下次{{ type === 0 ? "接种" : "驱虫" }}</text
+			><picker
+				mode="date"
+				:start="addDays(form.occurDate, 1)"
+				:value="form.nextDate"
+				@change="form.nextDate = $event.detail.value"
+				><view class="m-input m-between"
+					>{{ form.nextDate }}<text class="m-green">修改</text></view
+				></picker
+			><view class="m-sub m-section">{{
+				type === 1
+					? "体内默认 90 天，体外默认 30 天，可自行调整。"
+					: "按兽医建议调整接种安排。"
+			}}</view></view
+		>
+		<view class="m-card"
+			><text class="m-label">{{
+				type === 4 ? "诊断、费用与处方备注" : "更多信息（选填）"
+			}}</text
+			><textarea
+				class="m-input m-textarea"
+				maxlength="500"
+				placeholder="记录这次照顾的小细节…"
+				v-model="form.remark"
+			/></view
+		><view v-if="type === 3" class="m-note">请按兽医处方填写用药信息，不自行推算剂量。</view
+		><view v-if="message" class="m-error-text">{{ message }}</view
+		><button class="m-button full" :disabled="saving" @tap="save">
+			{{ saving ? "正在保存…" : "保存记录" }}
+		</button>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed, watch } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { addHealthRecord, HEALTH_TYPE_NAMES } from "@/api/pet";
+import { useMaoyu, photo, dateKey, addDays, requireLogin, open } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const { visiblePets, refresh } = useMaoyu(),
+	petId = ref(0),
+	type = ref(2),
+	saving = ref(false),
+	message = ref("");
+const form = ref({
+	itemName: "",
+	subType: "体外",
+	value: "",
+	occurDate: dateKey(),
+	nextDate: addDays(dateKey(), 365),
+	remark: ""
+});
+const pet = computed(() => visiblePets.value.find((p) => p.id === petId.value)),
+	title = computed(() =>
+		type.value === 2 ? "记录体重" : "新增" + HEALTH_TYPE_NAMES[type.value]
+	);
+const presets = computed(() =>
+	type.value === 0
+		? [pet.value?.species === 1 ? "卫佳伍" : "猫三联", "狂犬", "自定义"]
+		: type.value === 1
+			? ["体外", "体内"]
+			: type.value === 5
+				? ["喂食", "洗澡", "美容", "剪指甲", ...(pet.value?.species === 1 ? ["遛狗"] : [])]
+				: []
+);
+const key = () => `maoyu_health_draft_${petId.value}_${type.value}`;
+watch(form, (v) => uni.setStorageSync(key(), v), { deep: true });
+function pick(s: string) {
+	if (type.value === 1) {
+		form.value.subType = s;
+		form.value.nextDate = addDays(form.value.occurDate, s === "体内" ? 90 : 30);
+	} else form.value.itemName = s === "自定义" ? "" : s;
+}
+function setDate(s: string) {
+	form.value.occurDate = s;
+	form.value.nextDate = addDays(
+		s,
+		type.value === 0 ? 365 : form.value.subType === "体内" ? 90 : 30
+	);
+}
+async function save() {
+	if (saving.value) return;
+	message.value = "";
+	const value = Number(form.value.value);
+	if (type.value === 2 && (!Number.isFinite(value) || value <= 0 || value > 1000)) {
+		message.value = "请填写有效体重（大于 0，单位 kg）";
+		return;
+	}
+	if (type.value !== 2 && !form.value.itemName.trim()) {
+		message.value = "请填写记录名称";
+		return;
+	}
+	if (!requireLogin()) return;
+	if (petId.value <= 0) {
+		message.value = "这是示例档案，请先添加自己的宠物";
+		return;
+	}
+	const cycleDays = [0, 1].includes(type.value)
+		? Math.round(
+				(Date.parse(form.value.nextDate + "T12:00:00") -
+					Date.parse(form.value.occurDate + "T12:00:00")) /
+					86400000
+			)
+		: 0;
+	if ([0, 1].includes(type.value) && cycleDays < 1) {
+		message.value = "下次日期应晚于本次记录日期";
+		return;
+	}
+	saving.value = true;
+	try {
+		await addHealthRecord({
+			petId: petId.value,
+			type: type.value,
+			itemName: type.value === 2 ? "体重记录" : form.value.itemName.trim(),
+			subType: type.value === 1 ? form.value.subType : undefined,
+			occurDate: form.value.occurDate,
+			value: type.value === 2 ? value : undefined,
+			unit: type.value === 2 ? "kg" : undefined,
+			cycleDays,
+			remark: form.value.remark
+		});
+		uni.removeStorageSync(key());
+		uni.navigateBack();
+	} catch (e) {
+		message.value = errorMessage(e) + "，输入已保留，请重试";
+	} finally {
+		saving.value = false;
+	}
+}
+onLoad(async (opts) => {
+	petId.value = Number(opts?.petId || 0);
+	type.value = Number(opts?.type ?? 2);
+	await refresh();
+	const draft = uni.getStorageSync(key());
+	if (draft) form.value = draft;
+	else {
+		if (type.value === 0) form.value.itemName = pet.value?.species === 1 ? "卫佳伍" : "猫三联";
+		if (type.value === 1) form.value.nextDate = addDays(dateKey(), 30);
+	}
+});
+</script>
+<style scoped>
+.record-input {
+	margin-top: 14px;
+}
+.weight-input {
+	height: 80px;
+	font-size: 38px;
+	text-align: center;
+	color: #329e6b;
+	font-weight: 650;
+}
+</style>

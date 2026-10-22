@@ -1,0 +1,13 @@
+<template>
+	<image
+		:src="'/static/maoyu/icons/' + name + '-' + color + '.svg'"
+		:style="{ width: size + 'px', height: size + 'px', flexShrink: 0 }"
+		mode="aspectFit"
+	/>
+</template>
+<script setup lang="ts">
+withDefaults(defineProps<{ name: string; color?: string; size?: number }>(), {
+	color: "green",
+	size: 24
+});
+</script>

@@ -1,0 +1,54 @@
+<template>
+	<MPage title="我的档案" back
+		><view v-if="guest" class="m-demo">示例档案，仅供浏览</view
+		><view class="m-between"
+			><text class="m-heading">毛孩子 · {{ visiblePets.length }}</text
+			><button class="m-plain m-green" @tap="open('pet-form')">＋ 添加</button></view
+		><button
+			v-for="p in visiblePets"
+			:key="p.id"
+			class="m-card archive m-plain"
+			@tap="visitPet(p.id)"
+		>
+			<image class="m-avatar" :src="photo(p, 'pet')" mode="aspectFill" /><view class="m-grow"
+				><view class="m-name">{{ p.name }}</view
+				><view class="m-sub"
+					>{{ p.breed || SPECIES_NAMES[p.species] }} · {{ ageText(p.birthday) }}</view
+				></view
+			><MIcon name="chevron" color="muted" /></button
+		><view class="m-between m-section"
+			><text class="m-heading">绿叶子 · {{ visiblePlants.length }}</text
+			><button class="m-plain m-green" @tap="open('plant-form')">＋ 添加</button></view
+		><button
+			v-for="p in visiblePlants"
+			:key="p.id"
+			class="m-card archive m-plain"
+			@tap="open('plant-detail', 'id=' + p.id)"
+		>
+			<image class="m-avatar" :src="photo(p)" mode="aspectFill" /><view class="m-grow"
+				><view class="m-name">{{ p.name }}</view
+				><view class="m-sub">{{ p.speciesName }} · {{ waterText(p) }}</view></view
+			><MIcon name="chevron" color="muted" /></button
+		><button class="m-button full" @tap="open('companion')">添加新伙伴</button></MPage
+	>
+</template>
+<script setup lang="ts">
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { SPECIES_NAMES } from "@/api/pet";
+import { useMaoyu, photo, open, ageText, waterText } from "@/composables/maoyu";
+const { guest, visiblePets, visiblePlants, selectedPet, refresh } = useMaoyu();
+function visitPet(id: number) {
+	selectedPet.value = id;
+	uni.switchTab({ url: "/pages/pet" });
+}
+onShow(refresh);
+</script>
+<style scoped>
+.archive {
+	width: 100%;
+	gap: 12px;
+	text-align: left;
+	justify-content: flex-start;
+}
+</style>

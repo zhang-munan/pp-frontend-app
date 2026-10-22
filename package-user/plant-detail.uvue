@@ -1,0 +1,221 @@
+<template>
+	<MPage title="植物档案" back
+		><template v-if="plant"
+			><view v-if="plant.id < 0" class="m-demo">示例档案 · 登录后添加自己的植物</view
+			><view class="m-card plant-overview"
+				><view class="m-row"
+					><image
+						class="detail-photo m-photo"
+						:src="photo(plant)"
+						mode="aspectFill"
+					/><view class="m-grow"
+						><view class="detail-name">{{ plant.name }}</view
+						><view class="m-sub">{{ plant.speciesName || "绿植" }}</view
+						><view class="m-sub m-section">{{ LOCATION_NAMES[plant.location] }}</view
+						><view class="m-sub">{{
+							plant.arriveDate
+								? "到家 " +
+									Math.max(0, -(daysFromToday(plant.arriveDate) || 0)) +
+									" 天"
+								: "和绿植一起，把日子过得更好"
+						}}</view></view
+					></view
+				><button class="m-button outline full" @tap="open('plant-form', 'id=' + plant.id)">
+					<MIcon name="edit" :size="18" />编辑档案
+				</button></view
+			>
+			<view class="m-card m-row"
+				><view class="care-icon"><MIcon name="water" :size="28" /></view
+				><view class="m-grow"
+					><view class="m-name">{{ waterText(plant) }}</view
+					><view class="m-sub">先看看土壤，再决定是否浇水</view></view
+				><button
+					class="m-button small"
+					:disabled="pending.includes(plant.id)"
+					@tap="
+						plant.lastWaterDate?.slice(0, 10) === dateKey()
+							? undoToday()
+							: waterPlants([plant])
+					"
+				>
+					{{ plant.lastWaterDate?.slice(0, 10) === dateKey() ? "撤销" : "浇过了" }}
+				</button></view
+			>
+			<view class="detail-grid"
+				><button
+					class="m-card m-plain shortcut"
+					@tap="open('plant-guide', 'id=' + plant.id)"
+				>
+					<MIcon name="book" :size="28" /><view
+						><view class="m-name">养护攻略</view
+						><view class="m-sub">新手也能养好</view></view
+					></button
+				><button class="m-card m-plain shortcut" @tap="showAll = !showAll">
+					<MIcon name="chart" color="amber" :size="28" /><view
+						><view class="m-name">生长记录</view
+						><view class="m-sub">查看养护时间线</view></view
+					></button
+				><button class="m-card m-plain shortcut" @tap="backToPlants">
+					<MIcon name="calendar" :size="28" /><view
+						><view class="m-name">养护日历</view
+						><view class="m-sub">不错过每一次照顾</view></view
+					></button
+				><button
+					class="m-card m-plain shortcut"
+					@tap="open('plant-form', 'id=' + plant.id)"
+				>
+					<MIcon name="bell" color="amber" :size="28" /><view
+						><view class="m-name">提醒设置</view
+						><view class="m-sub">每 {{ plant.waterCycleDays }} 天浇水</view></view
+					>
+				</button></view
+			>
+			<view class="m-card"
+				><view class="m-between"
+					><view class="m-heading">{{ showAll ? "养护时间线" : "最近记录" }}</view
+					><button class="m-plain m-link" @tap="showAll = !showAll">
+						{{ showAll ? "收起" : "全部记录" }} ›
+					</button></view
+				><view v-if="error" class="m-error-text">{{ error }}</view
+				><view
+					class="timeline m-row"
+					v-for="r in showAll ? timeline : timeline.slice(0, 3)"
+					:key="r.id"
+					><view class="care-icon"><MIcon :name="r.type === 0 ? 'water' : 'leaf'" /></view
+					><view class="m-grow"
+						><view class="m-between"
+							><text>{{ CARE_TYPE_NAMES[r.type] }}</text
+							><text class="m-sub">{{ r.occurDate }}</text></view
+						><view class="m-sub">{{ r.remark || "记下一次用心的照顾" }}</view></view
+					></view
+				><view v-if="!timeline.length" class="m-note">还没有养护记录</view></view
+			>
+			<button class="m-banner m-plain" @tap="open('ask')">
+				<MIcon name="chat" :size="30" /><view class="m-grow">智慧助手</view
+				><text>去提问 ›</text>
+			</button></template
+		><view v-else class="m-card m-empty">{{ error || "正在查找植物档案…" }}</view
+		><view v-if="undoMessage" class="m-undo"
+			><text>{{ undoMessage }}</text
+			><button class="m-plain" @tap="undo">撤销</button></view
+		></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref, computed, watch } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import {
+	careTimeline,
+	undoWater,
+	LOCATION_NAMES,
+	CARE_TYPE_NAMES,
+	type PlantCare
+} from "@/api/plant";
+import {
+	useMaoyu,
+	photo,
+	open,
+	waterText,
+	dateKey,
+	daysFromToday,
+	requireLogin
+} from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const { visiblePlants, refresh, waterPlants, pending, undo, undoMessage } = useMaoyu(),
+	id = ref(0),
+	timeline = ref<PlantCare[]>([]),
+	error = ref(""),
+	showAll = ref(false);
+const plant = computed(() => visiblePlants.value.find((p) => p.id === id.value));
+function backToPlants() {
+	uni.switchTab({ url: "/pages/plant" });
+}
+async function loadTimeline() {
+	if (id.value < 0) {
+		timeline.value = [];
+		return;
+	}
+	try {
+		timeline.value = (await careTimeline(id.value)) || [];
+	} catch (e) {
+		error.value = errorMessage(e);
+	}
+}
+async function undoToday() {
+	if (!requireLogin() || pending.value.includes(id.value)) return;
+	pending.value.push(id.value);
+	try {
+		await undoWater(id.value);
+		await refresh();
+		await loadTimeline();
+	} finally {
+		pending.value = pending.value.filter((i) => i !== id.value);
+	}
+}
+watch(() => plant.value?.lastWaterDate, loadTimeline);
+onLoad((opts) => (id.value = Number(opts?.id || 0)));
+onShow(async () => {
+	await refresh();
+	if (!plant.value) {
+		error.value = "未找到此植物档案";
+		return;
+	}
+	await loadTimeline();
+});
+</script>
+<style scoped>
+.plant-overview {
+	padding: 10px;
+}
+.detail-photo {
+	width: 61%;
+	height: 188px;
+}
+.detail-name {
+	font-size: 24px;
+	font-weight: 650;
+}
+.plant-overview .m-button {
+	margin-top: 10px;
+	border-radius: 12px;
+	min-height: 38px;
+}
+.care-icon {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: #eef8f1;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.detail-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+.shortcut {
+	gap: 10px;
+	text-align: left;
+	margin: 0;
+	padding: 13px 10px;
+	justify-content: flex-start;
+}
+.shortcut .m-name {
+	font-size: 14px;
+}
+.shortcut .m-sub {
+	font-size: 10px;
+}
+.timeline {
+	padding: 12px 0;
+	border-bottom: 1px solid #edf0ea;
+}
+.timeline:last-child {
+	border: 0;
+}
+</style>

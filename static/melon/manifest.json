@@ -1,0 +1,682 @@
+[
+  {
+    "file": "logo.webp",
+    "source": "docs/UI/01-login.png",
+    "crop375": [
+      162,
+      103,
+      211,
+      151
+    ],
+    "display": [
+      48,
+      48
+    ],
+    "pixels": [
+      96,
+      96
+    ],
+    "transparent": false,
+    "bytes": 1984
+  },
+  {
+    "file": "login-scene.webp",
+    "source": "docs/UI/01-login.png",
+    "crop375": [
+      11,
+      242,
+      366,
+      442
+    ],
+    "display": [
+      355,
+      200
+    ],
+    "pixels": [
+      710,
+      400
+    ],
+    "transparent": false,
+    "bytes": 46576
+  },
+  {
+    "file": "avatar-front-home.webp",
+    "source": "docs/UI/02-home.png",
+    "crop375": [
+      22,
+      546,
+      60,
+      584
+    ],
+    "display": [
+      48,
+      48
+    ],
+    "pixels": [
+      96,
+      96
+    ],
+    "transparent": false,
+    "bytes": 2792
+  },
+  {
+    "file": "avatar-night.webp",
+    "source": "docs/UI/02-home.png",
+    "crop375": [
+      22,
+      314,
+      60,
+      352
+    ],
+    "display": [
+      48,
+      48
+    ],
+    "pixels": [
+      96,
+      96
+    ],
+    "transparent": false,
+    "bytes": 2546
+  },
+  {
+    "file": "avatar-guard.webp",
+    "source": "docs/UI/14-identity-selector.png",
+    "crop375": [
+      29,
+      98,
+      133,
+      202
+    ],
+    "display": [
+      96,
+      96
+    ],
+    "pixels": [
+      192,
+      192
+    ],
+    "transparent": false,
+    "bytes": 8000
+  },
+  {
+    "file": "avatar-front.webp",
+    "source": "docs/UI/14-identity-selector.png",
+    "crop375": [
+      200,
+      294,
+      269,
+      366
+    ],
+    "display": [
+      72,
+      72
+    ],
+    "pixels": [
+      144,
+      144
+    ],
+    "transparent": false,
+    "bytes": 4798
+  },
+  {
+    "file": "avatar-reversal.webp",
+    "source": "docs/UI/14-identity-selector.png",
+    "crop375": [
+      23,
+      414,
+      89,
+      486
+    ],
+    "display": [
+      72,
+      72
+    ],
+    "pixels": [
+      144,
+      144
+    ],
+    "transparent": false,
+    "bytes": 4678
+  },
+  {
+    "file": "avatar-sleepless.webp",
+    "source": "docs/UI/14-identity-selector.png",
+    "crop375": [
+      203,
+      414,
+      269,
+      486
+    ],
+    "display": [
+      72,
+      72
+    ],
+    "pixels": [
+      144,
+      144
+    ],
+    "transparent": false,
+    "bytes": 4734
+  },
+  {
+    "file": "avatar-king.webp",
+    "source": "docs/UI/14-identity-selector.png",
+    "crop375": [
+      27,
+      543,
+      91,
+      614
+    ],
+    "display": [
+      72,
+      72
+    ],
+    "pixels": [
+      144,
+      144
+    ],
+    "transparent": false,
+    "bytes": 3912
+  },
+  {
+    "file": "avatar-gentleman.webp",
+    "source": "docs/UI/14-identity-selector.png",
+    "crop375": [
+      204,
+      542,
+      270,
+      614
+    ],
+    "display": [
+      72,
+      72
+    ],
+    "pixels": [
+      144,
+      144
+    ],
+    "transparent": false,
+    "bytes": 3706
+  },
+  {
+    "file": "avatar-detective.webp",
+    "source": "docs/UI/13-creator-profile.png",
+    "crop375": [
+      18,
+      92,
+      115,
+      191
+    ],
+    "display": [
+      96,
+      96
+    ],
+    "pixels": [
+      192,
+      192
+    ],
+    "transparent": false,
+    "bytes": 8938
+  },
+  {
+    "file": "office-home.webp",
+    "source": "docs/UI/02-home.png",
+    "crop375": [
+      228,
+      352,
+      351,
+      475
+    ],
+    "display": [
+      144,
+      144
+    ],
+    "pixels": [
+      288,
+      288
+    ],
+    "transparent": false,
+    "bytes": 17882
+  },
+  {
+    "file": "office-story.webp",
+    "source": "docs/UI/06-post-detail.png",
+    "crop375": [
+      19,
+      287,
+      183,
+      408
+    ],
+    "display": [
+      180,
+      132
+    ],
+    "pixels": [
+      360,
+      264
+    ],
+    "transparent": false,
+    "bytes": 19474
+  },
+  {
+    "file": "office-desk.webp",
+    "source": "docs/UI/06-post-detail.png",
+    "crop375": [
+      188,
+      287,
+      353,
+      408
+    ],
+    "display": [
+      180,
+      132
+    ],
+    "pixels": [
+      360,
+      264
+    ],
+    "transparent": false,
+    "bytes": 15648
+  },
+  {
+    "file": "creator-office.webp",
+    "source": "docs/UI/13-creator-profile.png",
+    "crop375": [
+      25,
+      461,
+      156,
+      602
+    ],
+    "display": [
+      132,
+      142
+    ],
+    "pixels": [
+      264,
+      284
+    ],
+    "transparent": false,
+    "bytes": 13942
+  },
+  {
+    "file": "creator-chat.webp",
+    "source": "docs/UI/13-creator-profile.png",
+    "crop375": [
+      23,
+      639,
+      153,
+      777
+    ],
+    "display": [
+      132,
+      142
+    ],
+    "pixels": [
+      264,
+      284
+    ],
+    "transparent": false,
+    "bytes": 14674
+  },
+  {
+    "file": "category-work.webp",
+    "source": "docs/UI/03-category.png",
+    "crop375": [
+      25,
+      181,
+      90,
+      246
+    ],
+    "display": [
+      64,
+      64
+    ],
+    "pixels": [
+      128,
+      128
+    ],
+    "transparent": false,
+    "bytes": 2894
+  },
+  {
+    "file": "category-love.webp",
+    "source": "docs/UI/03-category.png",
+    "crop375": [
+      201,
+      181,
+      267,
+      246
+    ],
+    "display": [
+      64,
+      64
+    ],
+    "pixels": [
+      128,
+      128
+    ],
+    "transparent": false,
+    "bytes": 3096
+  },
+  {
+    "file": "category-family.webp",
+    "source": "docs/UI/03-category.png",
+    "crop375": [
+      24,
+      279,
+      91,
+      340
+    ],
+    "display": [
+      64,
+      64
+    ],
+    "pixels": [
+      128,
+      128
+    ],
+    "transparent": false,
+    "bytes": 3320
+  },
+  {
+    "file": "category-school.webp",
+    "source": "docs/UI/03-category.png",
+    "crop375": [
+      200,
+      278,
+      268,
+      342
+    ],
+    "display": [
+      64,
+      64
+    ],
+    "pixels": [
+      128,
+      128
+    ],
+    "transparent": false,
+    "bytes": 2920
+  },
+  {
+    "file": "category-society.webp",
+    "source": "docs/UI/03-category.png",
+    "crop375": [
+      21,
+      377,
+      93,
+      442
+    ],
+    "display": [
+      64,
+      64
+    ],
+    "pixels": [
+      128,
+      128
+    ],
+    "transparent": false,
+    "bytes": 2880
+  },
+  {
+    "file": "category-star.webp",
+    "source": "docs/UI/03-category.png",
+    "crop375": [
+      201,
+      374,
+      269,
+      442
+    ],
+    "display": [
+      64,
+      64
+    ],
+    "pixels": [
+      128,
+      128
+    ],
+    "transparent": false,
+    "bytes": 3496
+  },
+  {
+    "file": "hot-mascot.webp",
+    "source": "docs/UI/10-timeline.png",
+    "crop375": [
+      240,
+      91,
+      361,
+      194
+    ],
+    "display": [
+      120,
+      104
+    ],
+    "pixels": [
+      240,
+      208
+    ],
+    "transparent": false,
+    "bytes": 9390
+  },
+  {
+    "file": "hot-home.webp",
+    "source": "docs/UI/02-home.png",
+    "crop375": [
+      250,
+      147,
+      361,
+      222
+    ],
+    "display": [
+      124,
+      84
+    ],
+    "pixels": [
+      248,
+      168
+    ],
+    "transparent": false,
+    "bytes": 7784
+  },
+  {
+    "file": "ranking-mascot.webp",
+    "source": "docs/UI/04-hot-ranking.png",
+    "crop375": [
+      245,
+      160,
+      333,
+      252
+    ],
+    "display": [
+      108,
+      110
+    ],
+    "pixels": [
+      216,
+      220
+    ],
+    "transparent": false,
+    "bytes": 6038
+  },
+  {
+    "file": "review-shield.webp",
+    "source": "docs/UI/08-ai-review.png",
+    "crop375": [
+      105,
+      90,
+      268,
+      211
+    ],
+    "display": [
+      160,
+      120
+    ],
+    "pixels": [
+      320,
+      240
+    ],
+    "transparent": false,
+    "bytes": 9094
+  },
+  {
+    "file": "privacy-shield.webp",
+    "source": "docs/UI/19-settings-privacy.png",
+    "crop375": [
+      24,
+      103,
+      114,
+      205
+    ],
+    "display": [
+      88,
+      100
+    ],
+    "pixels": [
+      176,
+      200
+    ],
+    "transparent": true,
+    "bytes": 7452
+  },
+  {
+    "file": "level-badge.webp",
+    "source": "docs/UI/15-growth-level.png",
+    "crop375": [
+      23,
+      108,
+      140,
+      246
+    ],
+    "display": [
+      112,
+      134
+    ],
+    "pixels": [
+      224,
+      268
+    ],
+    "transparent": true,
+    "bytes": 8806
+  },
+  {
+    "file": "badge-first.webp",
+    "source": "docs/UI/16-achievements.png",
+    "crop375": [
+      29,
+      290,
+      111,
+      371
+    ],
+    "display": [
+      88,
+      88
+    ],
+    "pixels": [
+      176,
+      176
+    ],
+    "transparent": false,
+    "bytes": 4772
+  },
+  {
+    "file": "badge-hundred.webp",
+    "source": "docs/UI/16-achievements.png",
+    "crop375": [
+      142,
+      288,
+      226,
+      371
+    ],
+    "display": [
+      88,
+      88
+    ],
+    "pixels": [
+      176,
+      176
+    ],
+    "transparent": false,
+    "bytes": 5438
+  },
+  {
+    "file": "badge-reversal.webp",
+    "source": "docs/UI/16-achievements.png",
+    "crop375": [
+      267,
+      288,
+      349,
+      371
+    ],
+    "display": [
+      88,
+      88
+    ],
+    "pixels": [
+      176,
+      176
+    ],
+    "transparent": false,
+    "bytes": 5800
+  },
+  {
+    "file": "badge-streak.webp",
+    "source": "docs/UI/16-achievements.png",
+    "crop375": [
+      28,
+      444,
+      110,
+      521
+    ],
+    "display": [
+      88,
+      88
+    ],
+    "pixels": [
+      176,
+      176
+    ],
+    "transparent": false,
+    "bytes": 4868
+  },
+  {
+    "file": "badge-hot.webp",
+    "source": "docs/UI/16-achievements.png",
+    "crop375": [
+      139,
+      443,
+      231,
+      524
+    ],
+    "display": [
+      88,
+      88
+    ],
+    "pixels": [
+      176,
+      176
+    ],
+    "transparent": false,
+    "bytes": 6018
+  },
+  {
+    "file": "badge-comment.webp",
+    "source": "docs/UI/16-achievements.png",
+    "crop375": [
+      264,
+      443,
+      347,
+      524
+    ],
+    "display": [
+      88,
+      88
+    ],
+    "pixels": [
+      176,
+      176
+    ],
+    "transparent": false,
+    "bytes": 5274
+  }
+]

@@ -1,0 +1,32 @@
+<script lang="ts">
+// #ifdef H5
+import { ensureWechatMpSilentLogin } from "@/.cool/hooks/wx";
+// #endif
+
+export default {
+	onLaunch: function () {
+		console.log("App Launch");
+		// #ifdef H5
+		// Browsing is anonymous until the user explicitly chooses WeChat login.
+		// Only consume a callback here; never redirect a guest to authorization.
+		if (/(?:\?|&)code=/.test(window.location.search)) {
+			ensureWechatMpSilentLogin().then((loggedIn) => {
+				if (loggedIn) uni.reLaunch({ url: "/pages/index" });
+			});
+		}
+		// #endif
+	},
+	onShow: function () {
+		console.log("App Show");
+	},
+	onHide: function () {
+		console.log("App Hide");
+	},
+	onExit: function () {
+		console.log("App Exit");
+	}
+};
+</script>
+<style lang="scss">
+@import "@/styles/maoyu.scss";
+</style>

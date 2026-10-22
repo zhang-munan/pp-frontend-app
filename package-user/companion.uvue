@@ -1,0 +1,39 @@
+<template>
+	<MPage title="添加小伙伴" back
+		><view class="m-sub intro">选择想要记录的伙伴</view
+		><button class="m-card companion m-plain" @tap="open('pet-form')">
+			<image :src="asset('cat-hero.jpg')" mode="aspectFill" /><view class="m-grow"
+				><view class="m-heading">毛孩子</view><view class="m-sub">建立健康档案</view></view
+			><MIcon name="chevron" color="muted" /></button
+		><button class="m-card companion m-plain" @tap="open('plant-form')">
+			<image :src="asset('monstera.jpg')" mode="aspectFill" /><view class="m-grow"
+				><view class="m-heading">绿叶子</view><view class="m-sub">开始养护记录</view></view
+			><MIcon name="chevron" color="muted" /></button
+		><view class="m-note">免费可添加 2 只宠物和 2 株植物</view></MPage
+	>
+</template>
+<script setup lang="ts">
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { asset, open } from "@/composables/maoyu";
+</script>
+<style scoped>
+.intro {
+	margin: 25px 0 15px;
+}
+.companion {
+	width: 100%;
+	text-align: left;
+	gap: 16px;
+	padding: 16px;
+	min-height: 145px;
+}
+.companion image {
+	width: 140px;
+	height: 114px;
+	border-radius: 12px;
+}
+.companion .m-sub {
+	margin-top: 8px;
+}
+</style>

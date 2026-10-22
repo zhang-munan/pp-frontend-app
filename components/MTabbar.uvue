@@ -1,0 +1,36 @@
+<template>
+	<view class="m-tabbar"
+		><button
+			v-for="(tab, i) in tabs"
+			:key="tab.path"
+			class="m-tab m-plain"
+			:class="{ active: active === i }"
+			:aria-label="tab.label"
+			@tap="go(tab.path)"
+		>
+			<MIcon :name="tab.icon" :color="active === i ? 'green' : 'muted'" :size="25" /><text>{{
+				tab.label
+			}}</text>
+		</button></view
+	>
+</template>
+<script setup lang="ts">
+import MIcon from "./MIcon.uvue";
+defineProps<{ active: number }>();
+const tabs = [
+	{ label: "今日", icon: "home", path: "index" },
+	{ label: "毛孩子", icon: "cat", path: "pet" },
+	{ label: "绿叶子", icon: "leaf", path: "plant" },
+	{ label: "我的", icon: "user", path: "mine" }
+];
+function go(path: string) {
+	uni.switchTab({ url: "/pages/" + path });
+}
+onShow(() => {
+	const pages = getCurrentPages();
+	const route = pages[pages.length - 1]?.route;
+	if (tabs.some((tab) => route === "pages/" + tab.path)) {
+		uni.hideTabBar({ animation: false, fail: () => {} });
+	}
+});
+</script>

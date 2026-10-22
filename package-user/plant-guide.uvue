@@ -1,0 +1,63 @@
+<template>
+	<MPage title="植物养护攻略" back
+		><image class="guide-image" :src="photo(plant)" mode="aspectFill" /><view class="m-card"
+			><view class="m-heading">{{ plant?.speciesName || "植物" }}的养护笔记</view
+			><view class="m-sub">读懂每一片叶子的小心事</view></view
+		><view v-if="loading" class="m-note">正在查找品种攻略…</view
+		><view v-if="tips" class="m-card"
+			><view class="m-heading">品种养护要点</view
+			><view class="guide-copy">{{ tips }}</view></view
+		><view v-else class="m-card"
+			><view class="m-heading">为绿植多一点观察</view
+			><view class="guide-copy"
+				>每一次浇水前，先看看土壤是否干燥；根据摆放位置、通风和季节，调整自己的养护节奏。</view
+			><view class="m-sub">{{
+				error || "该品种的专属攻略尚未收录，可向智慧助手咨询。"
+			}}</view></view
+		><button class="m-banner m-plain" @tap="open('ask')">
+			<MIcon name="chat" /><text class="m-grow">遇到养护问题？问问智慧助手</text
+			><MIcon name="chevron" :size="18" /></button
+	></MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { searchSpecies } from "@/api/plant";
+import { useMaoyu, photo, open } from "@/composables/maoyu";
+const { visiblePlants, refresh } = useMaoyu(),
+	id = ref(0),
+	tips = ref(""),
+	loading = ref(false),
+	error = ref("");
+const plant = computed(
+	() => visiblePlants.value.find((p) => p.id === id.value) || visiblePlants.value[0]
+);
+onLoad(async (opts) => {
+	id.value = Number(opts?.id || 0);
+	await refresh();
+	loading.value = true;
+	try {
+		const list = await searchSpecies(plant.value?.speciesName || "龟背竹");
+		tips.value = list?.find((s) => s.name === plant.value?.speciesName)?.tips || "";
+	} catch (e) {
+		error.value = "攻略暂时未加载，请稍后重试。";
+	} finally {
+		loading.value = false;
+	}
+});
+</script>
+<style scoped>
+.guide-image {
+	width: 100%;
+	height: 215px;
+	border-radius: 16px;
+	margin-bottom: 12px;
+}
+.guide-copy {
+	font-size: 14px;
+	line-height: 1.9;
+	white-space: pre-line;
+	margin: 12px 0;
+}
+</style>

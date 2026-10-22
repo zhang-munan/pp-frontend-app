@@ -1,0 +1,72 @@
+<template>
+	<MPage :title="notifications ? '消息设置' : '设置'" back
+		><template v-if="notifications"
+			><view class="m-card"
+				><view class="m-row"
+					><MIcon name="bell" :size="32" /><view
+						><view class="m-heading">用心的提醒，温柔的陪伴</view
+						><view class="m-sub">在消息中心查看浇水与健康待办</view></view
+					></view
+				><view class="m-divider" /><view class="m-sub"
+					>微信订阅提醒暂未开放，当前版本可在应用内查看到期事项。开放后，你可以在这里自主设置提醒方式。</view
+				><button class="m-button full" @tap="open('notifications')">
+					查看消息中心
+				</button></view
+			></template
+		><template v-else
+			><view class="m-card"
+				><view class="m-name">{{
+					guest ? "尚未登录" : user.info.value?.nickName || "已登录"
+				}}</view
+				><view class="m-sub">{{
+					guest ? "登录后保存你的伙伴与成长记录" : "你的健康与养护记录保存在账号中"
+				}}</view
+				><button v-if="guest" class="m-button full" @tap="login">登录 / 注册</button></view
+			><view class="m-card"
+				><button
+					class="m-menu-row m-plain"
+					@tap="open('account-settings', 'section=notifications')"
+				>
+					<MIcon name="bell" /><text>消息设置</text
+					><MIcon name="chevron" color="muted" :size="16" /></button
+				><button
+					class="m-menu-row m-plain"
+					@tap="open('legal-document', 'type=privacy_policy')"
+				>
+					<MIcon name="file" /><text>隐私政策</text
+					><MIcon name="chevron" color="muted" :size="16" /></button
+				><button class="m-menu-row m-plain" @tap="open('help')">
+					<MIcon name="help" /><text>帮助反馈</text
+					><MIcon name="chevron" color="muted" :size="16" /></button
+				><button class="m-menu-row m-plain" @tap="open('help', 'about=1')">
+					<MIcon name="leaf" /><text>关于毛与叶</text
+					><MIcon name="chevron" color="muted" :size="16" /></button></view
+			><button v-if="!guest" class="m-button outline full" @tap="logout">
+				退出登录
+			</button></template
+		></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { useMaoyu, open, login } from "@/composables/maoyu";
+const { guest, user, refresh } = useMaoyu(),
+	notifications = ref(false);
+onLoad((o) => (notifications.value = o?.section === "notifications"));
+onShow(refresh);
+function logout() {
+	uni.showModal({
+		title: "退出登录",
+		content: "云端档案会为你保留，确认退出当前账号？",
+		success: (r) => {
+			if (r.confirm) {
+				user.clear();
+				refresh();
+				uni.switchTab({ url: "/pages/mine" });
+			}
+		}
+	});
+}
+</script>

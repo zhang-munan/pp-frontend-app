@@ -1,0 +1,328 @@
+<template>
+	<MPage :title="searchMode ? '搜索植物' : editing ? '编辑植物档案' : '完善植物档案'" back>
+		<template v-if="searchMode"
+			><view class="m-card"
+				><view class="m-row"
+					><MIcon name="search" /><input
+						class="m-grow"
+						placeholder="搜索植物名称"
+						v-model="keyword"
+						@input="search" /></view></view
+			><view class="m-sub">搜索品种，或手动填写后建档</view
+			><button
+				v-for="p in results"
+				:key="p.id"
+				class="m-card result m-plain"
+				@tap="selectSpecies(p)"
+			>
+				<MIcon name="leaf" /><view class="m-grow"
+					><view class="m-name">{{ p.name }}</view
+					><view class="m-sub">{{
+						p.alias || "参考浇水周期 " + p.waterCycleDays + " 天"
+					}}</view></view
+				><MIcon name="chevron" color="muted" /></button
+			><view v-if="searchError" class="m-error-text">{{ searchError }}</view
+			><button class="m-button full outline" @tap="searchMode = false">
+				手动填写植物档案
+			</button></template
+		>
+		<template v-else
+			><view class="m-card identity"
+				><button class="plant-photo m-plain" aria-label="选择植物照片" @tap="choosePhoto">
+					<image
+						:src="localPhoto || form.avatar || asset('monstera.jpg')"
+						mode="aspectFill"
+					/><view class="camera-badge"
+						><MIcon name="camera" color="white"
+					/></view></button
+				><view class="m-grow"
+					><view class="m-field"
+						><text class="m-label">昵称 *</text
+						><input
+							class="m-input"
+							placeholder="例如：大白"
+							maxlength="50"
+							v-model="form.name" /></view
+					><view class="m-field"
+						><text class="m-label">品种</text
+						><input
+							class="m-input"
+							placeholder="例如：龟背竹"
+							v-model="form.speciesName" /></view
+					><view
+						><text class="m-label">到家日</text
+						><picker
+							mode="date"
+							:end="dateKey()"
+							:value="form.arriveDate || dateKey()"
+							@change="form.arriveDate = $event.detail.value"
+							><view class="m-input">{{
+								form.arriveDate || "选择日期"
+							}}</view></picker
+						></view
+					></view
+				></view
+			>
+			<view class="m-card"
+				><text class="m-label">摆放位置</text
+				><view class="m-choices"
+					><button
+						v-for="(name, i) in LOCATION_NAMES"
+						:key="name"
+						class="m-choice"
+						:class="{ selected: form.location === i }"
+						@tap="form.location = i"
+					>
+						{{ name }}
+					</button></view
+				></view
+			>
+			<view class="m-card"
+				><text class="m-label">浇水提醒</text
+				><view class="cycle-control"
+					><MIcon name="water" :size="30" /><text>每</text
+					><input type="number" class="cycle-input" v-model="cycleInput" /><text
+						>天提醒一次</text
+					></view
+				><view class="m-sub">参考周期可自行调整，请结合土壤干湿决定是否浇水。</view></view
+			>
+			<view v-if="!editing" class="m-card"
+				><text class="m-label">上次浇水</text
+				><view class="m-choices"
+					><button
+						class="m-choice"
+						:class="{ selected: form.lastWaterDate === dateKey() }"
+						@tap="form.lastWaterDate = dateKey()"
+					>
+						今天</button
+					><button
+						class="m-choice"
+						:class="{ selected: !form.lastWaterDate }"
+						@tap="form.lastWaterDate = ''"
+					>
+						还没有</button
+					><picker
+						mode="date"
+						:end="dateKey()"
+						:value="form.lastWaterDate || dateKey()"
+						@change="form.lastWaterDate = $event.detail.value"
+						><view class="m-choice">{{
+							form.lastWaterDate && form.lastWaterDate !== dateKey()
+								? form.lastWaterDate
+								: "选择日期"
+						}}</view></picker
+					></view
+				></view
+			>
+			<view v-if="message" class="m-error-text">{{ message }}</view
+			><button class="m-button full" :disabled="saving" @tap="save">
+				{{ saving ? "正在保存…" : "保存并创建提醒" }}</button
+			><view class="m-note">{{
+				guest ? "保存时需要登录，草稿会为你保留" : "和绿植一起慢慢长大"
+			}}</view></template
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, watch, onUnmounted } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { upload } from "@/.cool";
+import {
+	addPlant,
+	updatePlant,
+	searchSpecies,
+	LOCATION_NAMES,
+	type PlantSpecies
+} from "@/api/plant";
+import { useMaoyu, asset, dateKey, addDays, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const { guest, visiblePlants, refresh } = useMaoyu(),
+	searchMode = ref(false),
+	keyword = ref(""),
+	results = ref<PlantSpecies[]>([]),
+	searchError = ref(""),
+	editing = ref(false),
+	plantId = ref(0),
+	localPhoto = ref(""),
+	saving = ref(false),
+	message = ref(""),
+	cycleInput = ref("6");
+const form = ref({
+	name: "",
+	speciesName: "",
+	avatar: "",
+	location: 0,
+	arriveDate: "",
+	lastWaterDate: ""
+});
+const key = () => `maoyu_plant_draft_${plantId.value > 0 ? plantId.value : "new"}`;
+watch(
+	[form, cycleInput],
+	() => uni.setStorageSync(key(), { ...form.value, cycle: cycleInput.value }),
+	{ deep: true }
+);
+let timer: any,
+	sequence = 0;
+function search() {
+	clearTimeout(timer);
+	const requestId = ++sequence;
+	timer = setTimeout(async () => {
+		try {
+			const data = await searchSpecies(keyword.value.trim());
+			if (requestId === sequence) {
+				results.value = data || [];
+				searchError.value = results.value.length ? "" : "暂未找到，可以手动填写";
+			}
+		} catch (e) {
+			if (requestId === sequence) searchError.value = "搜索暂不可用，可以手动填写";
+		}
+	}, 250);
+}
+onUnmounted(() => clearTimeout(timer));
+function selectSpecies(p: PlantSpecies) {
+	form.value.speciesName = p.name;
+	cycleInput.value = String(p.waterCycleDays || 6);
+	searchMode.value = false;
+}
+function choosePhoto() {
+	uni.chooseImage({
+		count: 1,
+		sizeType: ["compressed"],
+		success: (r) => {
+			localPhoto.value = r.tempFilePaths[0];
+			uni.showToast({ title: "照片已选择，请填写植物品种", icon: "none" });
+		}
+	});
+}
+async function save() {
+	if (saving.value) return;
+	message.value = "";
+	if (!form.value.name.trim()) {
+		message.value = "请填写植物昵称";
+		return;
+	}
+	const cycle = Number(cycleInput.value);
+	if (!Number.isInteger(cycle) || cycle < 1 || cycle > 365) {
+		message.value = "浇水周期需为 1–365 天的整数";
+		return;
+	}
+	if (!requireLogin()) return;
+	saving.value = true;
+	try {
+		const avatar = localPhoto.value
+			? await upload(localPhoto.value, { prefixPath: "maoyu/plants" })
+			: form.value.avatar;
+		const data = {
+			...form.value,
+			name: form.value.name.trim(),
+			avatar,
+			arriveDate: form.value.arriveDate || undefined,
+			lastWaterDate: form.value.lastWaterDate || undefined,
+			waterCycleDays: cycle,
+			fertilizeCycleDays: 30,
+			nextWaterDate: form.value.lastWaterDate
+				? addDays(form.value.lastWaterDate, cycle)
+				: dateKey()
+		};
+		if (editing.value && plantId.value > 0) await updatePlant({ ...data, id: plantId.value });
+		else await addPlant(data);
+		uni.removeStorageSync(key());
+		await refresh();
+		uni.switchTab({ url: "/pages/plant" });
+	} catch (e) {
+		message.value = errorMessage(e) + "，草稿已保留";
+	} finally {
+		saving.value = false;
+	}
+}
+onLoad(async (opts) => {
+	plantId.value = Number(opts?.id || 0);
+	await refresh();
+	if (plantId.value) {
+		const p = visiblePlants.value.find((p) => p.id === plantId.value);
+		if (p) {
+			editing.value = plantId.value > 0;
+			form.value = {
+				name: p.name,
+				speciesName: p.speciesName || "",
+				avatar: p.avatar || "",
+				location: p.location,
+				arriveDate: p.arriveDate || "",
+				lastWaterDate: p.lastWaterDate || ""
+			};
+			cycleInput.value = String(p.waterCycleDays);
+		}
+	} else {
+		const draft = uni.getStorageSync(key());
+		if (draft) {
+			form.value = draft;
+			cycleInput.value = draft.cycle || "6";
+		}
+	}
+	searchMode.value = opts?.mode === "search";
+	if (searchMode.value) search();
+	if (opts?.mode === "photo") choosePhoto();
+});
+</script>
+<style scoped>
+.identity {
+	display: flex;
+	flex-direction: row;
+	gap: 14px;
+	padding: 12px;
+}
+.plant-photo {
+	width: 40%;
+	height: 244px;
+	position: relative;
+	align-self: stretch;
+}
+.plant-photo > image {
+	width: 100%;
+	height: 100%;
+	border-radius: 12px;
+}
+.camera-badge {
+	position: absolute;
+	bottom: 8px;
+	right: 8px;
+	border: 1px solid white;
+	border-radius: 50%;
+	background: #3338;
+	width: 36px;
+	height: 36px;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.identity .m-input {
+	font-size: 13px;
+}
+.cycle-control {
+	background: #edf7f0;
+	border-radius: 12px;
+	padding: 16px;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+.cycle-input {
+	width: 45px;
+	font-size: 26px;
+	font-weight: 600;
+	color: #329e6b;
+	text-align: center;
+}
+.result {
+	display: flex;
+	flex-direction: row;
+	gap: 12px;
+	width: 100%;
+	text-align: left;
+	margin-top: 12px;
+}
+</style>

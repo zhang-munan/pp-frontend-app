@@ -1,0 +1,270 @@
+<template>
+	<MPage :title="step === 1 ? '选择宠物类型' : editing ? '编辑宠物档案' : '宠物档案'" back>
+		<template v-if="step === 1"
+			><view class="m-heading">你的新伙伴是？</view
+			><view class="m-sub intro">每一份小小的生命，都值得用心陪伴</view
+			><view class="species-grid"
+				><button
+					v-for="(name, i) in SPECIES_NAMES"
+					:key="name"
+					class="m-card m-plain species-option"
+					:class="{ chosen: form.species === i }"
+					@tap="choose(i)"
+				>
+					<text class="species-symbol">{{ symbols[i] }}</text
+					><text>{{ name }}</text>
+				</button></view
+			><view class="m-note">猫狗支持完整健康记录，其他伙伴支持档案与体重</view></template
+		>
+		<template v-else
+			><view class="m-heading">{{ editing ? "记录每一个小变化" : "完善档案" }}</view
+			><view class="m-sub">仅昵称和物种必填，其余可稍后完善。</view
+			><button class="avatar-picker m-plain" aria-label="选择宠物照片" @tap="choosePhoto">
+				<image
+					:src="localPhoto || form.avatar || asset('cat-leaves.png')"
+					mode="aspectFill"
+				/><view><MIcon name="camera" color="white" :size="20" /></view>
+			</button>
+			<view class="m-card"
+				><view class="m-field"
+					><text class="m-label">昵称 <text class="m-red">*</text></text
+					><input
+						class="m-input"
+						placeholder="给 TA 起个名字"
+						maxlength="50"
+						v-model="form.name" /></view
+				><view class="m-field"
+					><text class="m-label">物种 *</text
+					><picker
+						:range="SPECIES_NAMES"
+						:value="form.species"
+						@change="form.species = Number($event.detail.value)"
+						><view class="m-input m-between"
+							>{{ SPECIES_NAMES[form.species]
+							}}<MIcon
+								name="chevron"
+								color="muted"
+								:size="15" /></view></picker></view
+				><view class="m-field"
+					><text class="m-label">品种（选填）</text
+					><input
+						class="m-input"
+						placeholder="例如：英国短毛猫"
+						v-model="form.breed" /></view
+				><view class="m-field"
+					><text class="m-label">生日（选填）</text
+					><picker
+						mode="date"
+						:end="dateKey()"
+						:value="form.birthday || dateKey()"
+						@change="form.birthday = $event.detail.value"
+						><view class="m-input m-between"
+							>{{ form.birthday || "选择生日"
+							}}<MIcon
+								name="calendar"
+								color="muted"
+								:size="19" /></view></picker></view
+				><view class="m-field"
+					><text class="m-label">到家日期（选填）</text
+					><picker
+						mode="date"
+						:end="dateKey()"
+						:value="form.arriveDate || dateKey()"
+						@change="form.arriveDate = $event.detail.value"
+						><view class="m-input m-between"
+							>{{ form.arriveDate || "选择到家日期"
+							}}<MIcon
+								name="calendar"
+								color="muted"
+								:size="19" /></view></picker></view
+			></view>
+			<view class="m-card"
+				><text class="m-label">性别</text
+				><view class="m-choices"
+					><button
+						v-for="g in genders"
+						:key="g.id"
+						class="m-choice"
+						:class="{ selected: form.gender === g.id }"
+						@tap="form.gender = g.id"
+					>
+						{{ g.name }}
+					</button></view
+				><text class="m-label m-section">绝育状态</text
+				><view class="m-choices"
+					><button
+						class="m-choice"
+						:class="{ selected: form.neutered === 1 }"
+						@tap="form.neutered = 1"
+					>
+						已绝育</button
+					><button
+						class="m-choice"
+						:class="{ selected: form.neutered === 0 }"
+						@tap="form.neutered = 0"
+					>
+						未绝育
+					</button></view
+				></view
+			>
+			<view v-if="message" class="m-error-text">{{ message }}</view
+			><button class="m-button full" :disabled="saving" @tap="save">
+				{{ saving ? "正在保存…" : "保存档案" }}</button
+			><view v-if="guest" class="m-note">保存时需要登录，已填写内容会保留</view></template
+		>
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, watch } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { upload } from "@/.cool";
+import { addPet, updatePet, SPECIES_NAMES } from "@/api/pet";
+import { useMaoyu, asset, dateKey, requireLogin } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const { guest, visiblePets, refresh } = useMaoyu(),
+	step = ref(1),
+	editing = ref(false),
+	saving = ref(false),
+	message = ref(""),
+	localPhoto = ref("");
+const symbols = ["🐱", "🐶", "🐰", "🐹", "🐦", "🐟", "🦎", "🐾"],
+	genders = [
+		{ id: 2, name: "女孩" },
+		{ id: 1, name: "男孩" },
+		{ id: 0, name: "未知" }
+	];
+const form = ref({
+		name: "",
+		species: 0,
+		breed: "",
+		avatar: "",
+		birthday: "",
+		arriveDate: "",
+		gender: 0,
+		neutered: 0
+	}),
+	petId = ref(0);
+const key = () => `maoyu_pet_draft_${petId.value > 0 ? petId.value : "new"}`;
+watch(form, (v) => uni.setStorageSync(key(), v), { deep: true });
+function choose(i: number) {
+	form.value.species = i;
+	step.value = 2;
+}
+function choosePhoto() {
+	uni.chooseImage({
+		count: 1,
+		sizeType: ["compressed"],
+		success: (r) => {
+			localPhoto.value = r.tempFilePaths[0];
+		}
+	});
+}
+async function save() {
+	if (saving.value) return;
+	message.value = "";
+	if (!form.value.name.trim()) {
+		message.value = "请填写宠物昵称";
+		return;
+	}
+	if (!requireLogin()) return;
+	saving.value = true;
+	try {
+		const avatar = localPhoto.value
+			? await upload(localPhoto.value, { prefixPath: "maoyu/pets" })
+			: form.value.avatar;
+		const data = {
+			...form.value,
+			name: form.value.name.trim(),
+			avatar,
+			birthday: form.value.birthday || undefined,
+			arriveDate: form.value.arriveDate || undefined
+		};
+		if (editing.value && petId.value > 0) await updatePet({ ...data, id: petId.value });
+		else await addPet(data);
+		uni.removeStorageSync(key());
+		await refresh();
+		uni.switchTab({ url: "/pages/pet" });
+	} catch (e) {
+		message.value = errorMessage(e) + "，草稿已保留，可重试";
+	} finally {
+		saving.value = false;
+	}
+}
+onLoad(async (opts) => {
+	petId.value = Number(opts?.petId || 0);
+	await refresh();
+	if (petId.value) {
+		const p = visiblePets.value.find((p) => p.id === petId.value);
+		if (p) {
+			editing.value = petId.value > 0;
+			form.value = {
+				name: p.name,
+				species: p.species,
+				breed: p.breed || "",
+				avatar: p.avatar || "",
+				birthday: p.birthday || "",
+				arriveDate: p.arriveDate || "",
+				gender: p.gender,
+				neutered: p.neutered
+			};
+			step.value = 2;
+		}
+	} else {
+		const draft = uni.getStorageSync(key());
+		if (draft?.name?.trim()) {
+			form.value = draft;
+			step.value = 2;
+		}
+	}
+});
+</script>
+<style scoped>
+.intro {
+	margin: 8px 0 20px;
+}
+.species-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+.species-option {
+	flex-direction: column;
+	gap: 10px;
+	height: 115px;
+	margin: 0;
+	border: 1px solid transparent;
+}
+.species-option.chosen {
+	border-color: #48aa7b;
+	background: #eff7ee;
+}
+.species-symbol {
+	font-size: 38px;
+}
+.avatar-picker {
+	position: relative;
+	width: 106px;
+	margin: 20px auto;
+}
+.avatar-picker > image {
+	width: 106px;
+	height: 106px;
+	border-radius: 50%;
+	border: 4px solid white;
+}
+.avatar-picker > view {
+	position: absolute;
+	bottom: 0;
+	right: 0;
+	background: #48aa7b;
+	width: 34px;
+	height: 34px;
+	border: 3px solid white;
+	border-radius: 50%;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+</style>

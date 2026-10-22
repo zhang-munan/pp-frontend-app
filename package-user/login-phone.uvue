@@ -1,0 +1,269 @@
+<template>
+	<MPage title="登录毛与叶" back
+		><view class="login-welcome"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-heading"
+				>让每一份陪伴，都被记得</view
+			><view class="m-sub">登录后，健康档案与养护记录会为你保存</view></view
+		><view class="m-card"
+			><view class="m-choices modes"
+				><button class="m-choice" :class="{ selected: mode === 'sms' }" @tap="mode = 'sms'">
+					验证码登录</button
+				><button
+					class="m-choice"
+					:class="{ selected: mode === 'password' }"
+					@tap="mode = 'password'"
+				>
+					密码登录
+				</button></view
+			><view class="m-field"
+				><text class="m-label">手机号</text
+				><input
+					class="m-input"
+					type="number"
+					maxlength="11"
+					placeholder="请输入手机号"
+					v-model="phone" /></view
+			><template v-if="mode === 'sms'"
+				><view class="m-field"
+					><text class="m-label">图片验证码</text
+					><view class="m-row"
+						><input
+							class="m-input m-grow"
+							placeholder="输入图中字符"
+							v-model="captchaCode"
+						/><button
+							class="captcha m-plain"
+							aria-label="刷新图片验证码"
+							@tap="loadCaptcha"
+						>
+							<image v-if="captchaImage" :src="captchaImage" mode="aspectFit" /><text
+								v-else
+								>获取图片</text
+							>
+						</button></view
+					></view
+				><view class="m-field"
+					><text class="m-label">短信验证码</text
+					><view class="m-row"
+						><input
+							class="m-input m-grow"
+							type="number"
+							maxlength="6"
+							placeholder="请输入验证码"
+							v-model="smsCode"
+						/><button
+							class="m-button small outline"
+							:disabled="countdown > 0 || sending"
+							@tap="sendCode"
+						>
+							{{ countdown > 0 ? countdown + "s" : "获取验证码" }}
+						</button></view
+					></view
+				></template
+			><view v-else class="m-field"
+				><text class="m-label">密码</text
+				><input
+					class="m-input"
+					password
+					placeholder="请输入密码"
+					v-model="password" /></view
+			><view v-if="mode === 'sms'" class="agreement"
+				><checkbox-group @change="agreed = $event.detail.value.length > 0"
+					><label
+						><checkbox
+							value="agree"
+							:checked="agreed"
+							color="#48aa7b"
+						/>我已阅读并同意</label
+					></checkbox-group
+				><button class="m-plain" @tap="open('legal-document', 'type=user_agreement')">
+					用户协议</button
+				><button class="m-plain" @tap="open('legal-document', 'type=privacy_policy')">
+					隐私政策
+				</button></view
+			><view v-if="message" class="m-error-text">{{ message }}</view
+			><button class="m-button full" :disabled="busy" @tap="submit">
+				{{ busy ? "正在登录…" : "登录并继续" }}
+			</button></view
+		><button class="m-plain browse" @tap="back">先逛逛，稍后登录</button></MPage
+	>
+</template>
+<script setup lang="ts">
+import { legalContent } from "@/api/legal";
+import { ref, onUnmounted } from "vue";
+import MPage from "@/components/MPage.uvue";
+import { useStore } from "@/.cool";
+import {
+	getCaptcha,
+	getCaptchaImageSrc,
+	sendSmsCode,
+	loginByPhone,
+	loginByPassword
+} from "@/api/user";
+import { asset, open } from "@/composables/maoyu";
+import { errorMessage } from "@/utils/error";
+const legalReady = ref(false);
+const mode = ref("sms"),
+	phone = ref(""),
+	password = ref(""),
+	smsCode = ref(""),
+	captchaCode = ref(""),
+	captchaId = ref(""),
+	captchaImage = ref(""),
+	agreed = ref(false),
+	busy = ref(false),
+	sending = ref(false),
+	countdown = ref(0),
+	message = ref("");
+let timer: any;
+async function loadCaptcha() {
+	try {
+		const r = await getCaptcha();
+		if (r) {
+			captchaId.value = r.captchaId;
+			captchaImage.value = getCaptchaImageSrc(r.data);
+		}
+	} catch (e) {
+		message.value = errorMessage(e);
+	}
+}
+async function sendCode() {
+	message.value = "";
+	if (!legalReady.value) {
+		message.value = "协议尚未发布，暂不能使用短信登录；已有账号可用密码登录";
+		return;
+	}
+	if (!/^1\d{10}$/.test(phone.value)) {
+		message.value = "请填写有效的手机号";
+		return;
+	}
+	if (!captchaCode.value) {
+		message.value = "请先填写图片验证码";
+		await loadCaptcha();
+		return;
+	}
+	sending.value = true;
+	try {
+		await sendSmsCode({
+			phone: phone.value,
+			captchaId: captchaId.value,
+			code: captchaCode.value
+		});
+		countdown.value = 60;
+		timer = setInterval(() => {
+			countdown.value--;
+			if (countdown.value <= 0) clearInterval(timer);
+		}, 1000);
+	} catch (e) {
+		message.value = errorMessage(e);
+		await loadCaptcha();
+	} finally {
+		sending.value = false;
+	}
+}
+async function submit() {
+	message.value = "";
+	if (!/^1\d{10}$/.test(phone.value)) {
+		message.value = "请填写有效的手机号";
+		return;
+	}
+	if (mode.value === "sms" && !legalReady.value) {
+		message.value = "协议尚未发布，暂不能使用短信登录；已有账号可用密码登录";
+		return;
+	}
+	if (mode.value === "sms" && !agreed.value) {
+		message.value = "请阅读并同意用户协议和隐私政策";
+		return;
+	}
+	if (mode.value === "sms" ? !smsCode.value : !password.value) {
+		message.value = mode.value === "sms" ? "请填写短信验证码" : "请填写密码";
+		return;
+	}
+	busy.value = true;
+	try {
+		const token =
+			mode.value === "sms"
+				? await loginByPhone(phone.value, smsCode.value)
+				: await loginByPassword(phone.value, password.value);
+		if (!token?.token) throw new Error("登录未成功，请重试");
+		const { user } = useStore();
+		user.setToken(token);
+		await user.get();
+		const pages = getCurrentPages();
+		if (pages.length > 2 && pages[pages.length - 2]?.route === "package-user/login") {
+			uni.navigateBack({ delta: 2 });
+		} else if (pages.length === 2 && pages[0]?.route === "package-user/login") {
+			uni.switchTab({ url: "/pages/index" });
+		} else {
+			back();
+		}
+	} catch (e) {
+		message.value = errorMessage(e);
+	} finally {
+		busy.value = false;
+	}
+}
+function back() {
+	if (getCurrentPages().length > 1) uni.navigateBack();
+	else uni.switchTab({ url: "/pages/index" });
+}
+onLoad(async () => {
+	try {
+		const docs = await Promise.all([
+			legalContent("user_agreement"),
+			legalContent("privacy_policy")
+		]);
+		legalReady.value = docs.every(Boolean);
+	} catch (e) {
+		legalReady.value = false;
+	}
+});
+onUnmounted(() => clearInterval(timer));
+</script>
+<style scoped>
+.login-welcome {
+	text-align: center;
+	margin: 10px 0 25px;
+}
+.login-welcome image {
+	width: 230px;
+	height: 130px;
+	align-self: center;
+}
+.login-welcome .m-sub {
+	margin-top: 9px;
+}
+.modes {
+	margin-bottom: 20px;
+}
+.modes button {
+	flex: 1;
+}
+.captcha {
+	width: 106px;
+	flex-shrink: 0;
+}
+.captcha image {
+	width: 106px;
+	height: 40px;
+}
+.agreement {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	font-size: 11px;
+	color: #92998f;
+	align-items: center;
+	gap: 4px;
+}
+.agreement button {
+	font-size: 11px;
+	color: #329e6b;
+	min-height: 30px;
+}
+.browse {
+	margin: auto;
+	color: #7c887c;
+	font-size: 13px;
+}
+</style>

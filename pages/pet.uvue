@@ -1,0 +1,330 @@
+<template>
+	<MPage title="毛孩子">
+		<view v-if="guest" class="m-demo"
+			><text class="m-demo-label">示例档案 · 登录后记录你的陪伴</text
+			><button class="m-plain" @tap="login">去登录 ›</button></view
+		>
+		<view v-if="error" class="m-error" @tap="refresh">{{ error }} · 点击重试</view>
+		<scroll-view scroll-x class="pet-scroll"
+			><view class="pet-select"
+				><button
+					class="pet-option m-plain"
+					:class="{ selected: currentPet?.id === p.id }"
+					v-for="p in visiblePets"
+					:key="p.id"
+					@tap="select(p.id)"
+				>
+					<image :src="photo(p, 'pet')" mode="aspectFill" /><text>{{
+						p.name
+					}}</text></button
+				><button class="add-pet m-button outline" @tap="open('pet-form')">
+					<MIcon name="plus" />添加宠物
+				</button></view
+			></scroll-view
+		>
+		<template v-if="currentPet"
+			><view class="pet-hero"
+				><image
+					class="hero-photo"
+					:src="photo(currentPet, 'pet-hero')"
+					mode="aspectFill"
+				/><view class="hero-shade" /><view class="hero-copy"
+					><view class="hero-name">{{ currentPet.name }}</view
+					><view
+						>{{ currentPet.breed || SPECIES_NAMES[currentPet.species] }} ·
+						{{ ["未知", "男孩", "女孩"][currentPet.gender] }}</view
+					><view>{{ ageText(currentPet.birthday) }}</view
+					><text v-if="age?.humanAge" class="human-age"
+						>相当于人类 {{ age.humanAge }} 岁</text
+					><view v-if="guest" class="pet-alert">！ 驱虫即将到期</view></view
+				><text class="hero-note">有你在\n就是家 ♡</text></view
+			>
+			<view class="health-grid m-card"
+				><button
+					v-for="g in grids"
+					:key="g.label"
+					class="health-item m-plain"
+					@tap="records(g.type)"
+				>
+					<MIcon
+						:name="g.icon"
+						:size="28"
+						:color="g.type === 1 ? 'amber' : 'green'"
+					/><text>{{ g.label }}</text>
+				</button></view
+			>
+			<view class="m-card recent"
+				><view class="m-between"
+					><text class="m-heading">最近记录</text
+					><button class="m-plain m-link" @tap="records(-1)">
+						更多 <MIcon name="chevron" color="muted" :size="15" /></button></view
+				><button
+					v-for="r in recent"
+					:key="r.id"
+					class="record-row m-plain"
+					@tap="records(r.type)"
+				>
+					<view class="record-icon"
+						><MIcon
+							:name="
+								r.type === 2 ? 'chart' : r.type === 0 ? 'vaccine' : 'paw'
+							" /></view
+					><text class="record-date">{{ r.occurDate.slice(5).replace("-", "月") }}日</text
+					><view class="m-grow"
+						><view class="m-name">{{ r.itemName }}</view
+						><view class="m-sub">{{
+							r.type === 2 ? r.value + " kg" : r.remark || "已记录"
+						}}</view></view
+					><MIcon name="chevron" color="muted" :size="15" /></button
+				><view v-if="!recent.length" class="m-note">{{
+					recordError || "还没有记录，记下第一份关心吧"
+				}}</view></view
+			>
+			<view class="pet-footer"
+				><text>用爱记录成长\n让 TA 一直健康快乐 ♡</text
+				><image :src="asset('cat-leaves.png')" mode="aspectFit"
+			/></view> </template
+		><view v-else class="m-card m-empty"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-name"
+				>给毛孩子建个家</view
+			><view class="m-sub">从第一份健康档案，开始用心陪伴</view
+			><button class="m-button full" @tap="open('pet-form')">添加毛孩子</button></view
+		>
+		<MTabbar :active="1" />
+	</MPage>
+</template>
+<script setup lang="ts">
+import { ref, computed, watch } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import MTabbar from "@/components/MTabbar.uvue";
+import { healthList, petAge, SPECIES_NAMES, type PetHealth } from "@/api/pet";
+import { useMaoyu, asset, photo, open, ageText, demoRecords, login } from "@/composables/maoyu";
+const { guest, visiblePets, currentPet, selectedPet, refresh, error } = useMaoyu();
+const recent = ref<PetHealth[]>([]),
+	recordError = ref(""),
+	age = ref<any>(null);
+const grids = computed(() => [
+	{ label: "体重曲线", icon: "chart", type: 2 },
+	...(currentPet.value?.species < 2
+		? [
+				{ label: "疫苗记录", icon: "vaccine", type: 0 },
+				{ label: "驱虫记录", icon: "paw", type: 1 },
+				{ label: "用药提醒", icon: "pill", type: 3 },
+				{ label: "就医记录", icon: "medical", type: 4 },
+				{ label: "日常打卡", icon: "calendar", type: 5 }
+			]
+		: []),
+	{ label: "时间线", icon: "clock", type: -1 },
+	{ label: "编辑档案", icon: "edit", type: 9 }
+]);
+function records(type: number) {
+	if (!currentPet.value) return;
+	open(type === 9 ? "pet-form" : "pet-records", `petId=${currentPet.value.id}&type=${type}`);
+}
+function select(id: number) {
+	selectedPet.value = id;
+}
+async function loadRecords() {
+	const p = currentPet.value;
+	if (!p) return;
+	recordError.value = "";
+	recent.value = [];
+	age.value = null;
+	if (guest.value) {
+		recent.value = demoRecords(p.id)
+			.filter((r) => r.type !== 0)
+			.sort((a, b) => b.occurDate.localeCompare(a.occurDate))
+			.slice(0, 2);
+		age.value = { humanAge: 28 };
+		return;
+	}
+	try {
+		const [r, a] = await Promise.all([healthList(p.id), petAge(p.id)]);
+		if (currentPet.value?.id !== p.id) return;
+		recent.value = (r || []).slice(0, 2);
+		age.value = a;
+	} catch (e) {
+		recordError.value = "记录暂未加载，请稍后重试";
+	}
+}
+watch(() => currentPet.value?.id, loadRecords);
+onShow(async () => {
+	await refresh();
+	await loadRecords();
+});
+</script>
+<style scoped>
+.pet-scroll {
+	margin-bottom: 10px;
+}
+.pet-select {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 22px;
+	min-width: max-content;
+}
+.pet-option {
+	flex-direction: column;
+	font-size: 14px;
+	gap: 3px;
+	position: relative;
+	padding-bottom: 6px;
+}
+.pet-option image {
+	width: 60px;
+	height: 60px;
+	border-radius: 50%;
+	border: 2px solid transparent;
+	padding: 2px;
+}
+.pet-option.selected image {
+	border-color: #329e6b;
+}
+.pet-option.selected:after {
+	display: block;
+	content: "";
+	width: 22px;
+	height: 3px;
+	background: #329e6b;
+	position: absolute;
+	bottom: 0;
+	top: auto;
+	left: 50%;
+	transform: translateX(-50%);
+	border-radius: 2px;
+}
+.add-pet {
+	border-style: dashed;
+	font-weight: 500;
+	font-size: 15px;
+	min-width: 150px;
+	height: 44px;
+}
+.pet-hero {
+	height: 194px;
+	position: relative;
+	overflow: hidden;
+	border-radius: 15px;
+	margin-bottom: 10px;
+}
+.hero-photo {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+}
+.hero-shade {
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(90deg, #f4e9dded 0%, #f4e9dd9c 38%, transparent 62%);
+}
+.hero-copy {
+	display: block;
+	position: relative;
+	padding: 24px 16px;
+	font-size: 13px;
+	color: #242925;
+	line-height: 1.8;
+}
+.hero-name {
+	font-size: 25px;
+	font-weight: 700;
+	margin-bottom: 3px;
+}
+.human-age {
+	display: block;
+}
+.pet-alert {
+	width: fit-content;
+	display: inline-block;
+	background: #ffdf89;
+	border-radius: 22px;
+	padding: 5px 10px;
+	margin-top: 12px;
+	font-size: 12px;
+}
+.hero-note {
+	position: absolute;
+	right: 15px;
+	bottom: 13px;
+	white-space: pre-line;
+	font-size: 17px;
+	color: #fff;
+	font-family: serif;
+	font-style: italic;
+}
+.health-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+	padding: 8px;
+}
+.health-item {
+	flex-direction: column;
+	gap: 9px;
+	height: 72px;
+	border-radius: 13px;
+	background: #fff;
+	box-shadow: 0 3px 12px #2a442609;
+	font-size: 13px;
+}
+.recent {
+	padding: 10px 14px;
+}
+.record-row {
+	padding: 0;
+	width: 100%;
+	display: flex;
+	flex-direction: row;
+	text-align: left;
+	gap: 10px;
+	min-height: 62px;
+	border-bottom: 1px solid #f0f1ef;
+}
+.record-row:last-child {
+	border: 0;
+}
+.record-icon {
+	width: 39px;
+	height: 39px;
+	border-radius: 50%;
+	background: #edf7f0;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.record-date {
+	font-size: 12px;
+	color: #747a78;
+}
+.record-row .m-name {
+	font-size: 14px;
+}
+.record-row .m-sub {
+	font-size: 11px;
+}
+.pet-footer {
+	height: 66px;
+	background: #e9f4e9;
+	border-radius: 14px;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 25px;
+	overflow: hidden;
+}
+.pet-footer text {
+	white-space: pre-line;
+	font-size: 14px;
+	line-height: 1.8;
+	color: #398b5a;
+	font-style: italic;
+}
+.pet-footer image {
+	width: 136px;
+	height: 80px;
+}
+</style>

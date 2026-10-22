@@ -1,0 +1,62 @@
+<template>
+	<MPage :title="about ? '关于毛与叶' : '帮助反馈'" back
+		><view class="m-card m-empty"
+			><image :src="asset('cat-leaves.png')" mode="aspectFit" /><view class="m-heading"
+				>毛与叶</view
+			><view class="m-sub">你负责陪伴，我负责提醒</view></view
+		><template v-if="!about"
+			><view class="m-card" v-for="(q, i) in questions" :key="q.title"
+				><button class="m-plain m-between question" @tap="active = active === i ? -1 : i">
+					<text>{{ q.title }}</text
+					><MIcon name="chevron" color="muted" :size="16" /></button
+				><view v-if="active === i" class="answer m-sub">{{ q.answer }}</view></view
+			></template
+		><view v-else class="m-card"
+			><view class="answer"
+				>一站式宠物健康管家与植物养护助手。把每一份健康、每一次生长，记进平凡又温柔的日常。</view
+			><view class="m-sub">当前版本优先提供档案、健康记录、浇水与基础问答。</view></view
+		></MPage
+	>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import MPage from "@/components/MPage.uvue";
+import MIcon from "@/components/MIcon.uvue";
+import { asset } from "@/composables/maoyu";
+const about = ref(false),
+	active = ref(-1);
+const questions = [
+	{
+		title: "如何添加第一位小伙伴？",
+		answer: "进入毛孩子或绿叶子页面，点击添加。填写昵称和基本信息，登录后即可保存档案。"
+	},
+	{
+		title: "误点了浇水，如何撤销？",
+		answer: "打卡后点击底部提示中的“撤销”，也可以进入植物档案，撤销今天的浇水记录。"
+	},
+	{
+		title: "保存失败，刚才填写的内容还在吗？",
+		answer: "当前输入会保留在表单中，档案与健康记录表单也会在本机保留草稿。网络恢复后可再次保存。"
+	},
+	{
+		title: "为什么看到的是示例档案？",
+		answer: "未登录时可以浏览示例，示例不会写入你的账号。登录后展示自己的档案，没有档案时可从添加伙伴开始。"
+	},
+	{
+		title: "如何反馈使用问题？",
+		answer: "请保留发生问题的页面名称、操作步骤和时间。当前版本尚未开放在线反馈提交，可将这些信息提供给项目维护人员。"
+	}
+];
+onLoad((o) => (about.value = o?.about === "1"));
+</script>
+<style scoped>
+.question {
+	width: 100%;
+	font-size: 15px;
+	text-align: left;
+}
+.answer {
+	line-height: 1.9;
+	margin: 10px 0;
+}
+</style>
